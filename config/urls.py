@@ -34,5 +34,5 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/v1/crawling/', include('youtube_crawling.urls')),
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),  # Swagger UI
-    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),  # ReDoc UI (선택)
+    # path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),  # ReDoc UI (선택)
 ]
