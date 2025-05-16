@@ -1,23 +1,12 @@
 from .models import YouTubeVideo, YouTubeProduct
-from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
-import time
 import pandas as pd
+import time
 from datetime import datetime
-
-def create_driver():
-    options = webdriver.ChromeOptions()
-    options.add_argument('--headless')  # API 서버에서는 GUI 없음
-    options.add_argument('--disable-gpu')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
 # 제품 정보 수집 함수
 def get_product_info(soup):
@@ -27,30 +16,28 @@ def get_product_info(soup):
     except Exception:
         return 0
 
+
 # 메인 크롤링 함수
 def collect_video_data(driver, video_id):
-    base_url = "https://www.youtube.com/watch?v="
-    driver.get(base_url + video_id)
+    base_url = "https://www.youtube.com/watch?v={video_id}"
+    driver.get(base_url)
     wait = WebDriverWait(driver, 10)
 
     # 제목 수집
     try:
-        title_element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'h1.title')))
-        title = title_element.text.strip()
+        title = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'h1.title'))).text.strip()
     except Exception:
         title = "제목 수집 실패"
 
     # 채널명
     try:
-        channel_element = driver.find_element(By.CSS_SELECTOR, "ytd-channel-name a")
-        channel_name = channel_element.text.strip()
+        channel_name = driver.find_element(By.CSS_SELECTOR, "ytd-channel-name a").text.strip()
     except Exception:
         channel_name = "채널명 수집 실패"
 
     # 구독자 수
     try:
-        subscriber_element = driver.find_element(By.CSS_SELECTOR, "#owner-sub-count")
-        subscriber_count = subscriber_element.text.strip()
+        subscriber_count = driver.find_element(By.CSS_SELECTOR, "#owner-sub-count").text.strip()
     except Exception:
         subscriber_count = "구독자 수 수집 실패"
 
@@ -62,8 +49,7 @@ def collect_video_data(driver, video_id):
         view_count = "조회수 수집 실패"
 
     try:
-        upload_date_element = driver.find_element(By.CSS_SELECTOR, "#info-strings yt-formatted-string")
-        upload_date = upload_date_element.text.strip()
+        upload_date = driver.find_element(By.CSS_SELECTOR, "#info-strings yt-formatted-string").text.strip()
     except Exception:
         upload_date = "업로드일 수집 실패"
 
@@ -86,66 +72,109 @@ def collect_video_data(driver, video_id):
 
     # 더보기 설명
     try:
-        description_element = soup.select_one("#description yt-formatted-string")
-        description_text = description_element.get_text(separator="\n").strip()
+        description_text = soup.select_one("#description yt-formatted-string").get_text(separator="\n").strip
     except Exception:
         description_text = "설명 수집 실패"
 
-    # 상품 개수
-    product_count = get_product_info(soup)
+    # 여러 제품 수집
+    product_items = soup.select("ytd-product-item-renderer")
+    rows = []
 
-    # DB 저장
-    data = {
-        "video_id": video_id,
-        "title": title,
-        "channel_name": channel_name,
-        "subscriber_count": subscriber_count,
-        "view_count": view_count,
-        "upload_date": upload_date,
-        "extracted_date": datetime.today().date(),
-        "video_url": f"https://www.youtube.com/watch?v={video_id}",
-        "product_count": product_count,
-        "description": description_text,
-        # 제품 정보
-        "product_image_link": None,
-        "product_name": "없음",
-        "product_price": "0",
-        "product_link": None,
-    }
+    if product_items:
+        for product in product_items:
+            try:
+                name = product.select_one("yt-formatted-string").text.strip()
+            except:
+                name = "이름 수집 실패"
 
-    df = pd.DataFrame([data])
-    return df
+            try:
+                price = product.select_one("#price").text.strip()
+            except:
+                price = "가격 수집 실패"
+
+            try:
+                link = product.select_one("a")["href"]
+            except:
+                link = None
+
+            try:
+                image = product.select_one("img")["src"]
+            except:
+                image = None
+    
+            rows.append({
+                    "video_id": video_id,
+                    "title": title,
+                    "channel_name": channel_name,
+                    "subscriber_count": subscriber_count,
+                    "view_count": view_count,
+                    "upload_date": upload_date,
+                    "extracted_date": datetime.today().date(),
+                    "video_url": base_url,
+                    "product_count": len(product_items),
+                    "description": description_text,
+                    "product_name": name,
+                    "product_price": price,
+                    "product_link": link,
+                    "product_image_link": image,
+                })
+
+    else:
+        # 제품이 없을 경우에도 영상 정보는 저장
+        rows.append({
+            "video_id": video_id,
+            "title": title,
+            "channel_name": channel_name,
+            "subscriber_count": subscriber_count,
+            "view_count": view_count,
+            "upload_date": upload_date,
+            "extracted_date": datetime.today().date(),
+            "video_url": base_url,
+            "product_count": 0,
+            "description": description_text,
+            "product_name": None,
+            "product_price": None,
+            "product_link": None,
+            "product_image_link": None,
+        })
+    return pd.DataFrame(rows)
 
 
 # DB에 저장하는 함수
 def save_youtube_data_to_db(dataframe):
+    if dataframe.empty:
+        return 0
+
+    video_id = dataframe.iloc[0]['video_id']
+
+    if YouTubeVideo.objects.filter(video_id=video_id).exists():
+        print(f"⚠️ 이미 존재하는 영상 id입니다: {video_id}")
+        return 0
+    
+
+    row = dataframe.iloc[0]
+    video = YouTubeVideo.objects.create(
+        video_id=video_id,
+        extracted_date=row['extracted_date'],
+        upload_date=row['upload_date'],
+        channel_name=row['channel_name'],
+        title=row['title'],
+        video_url=row['video_url'],
+        subscriber_count=row['subscriber_count'],
+        view_count=row['view_count'],
+        product_count=row['product_count'],
+        description=row['description']
+    )
+
+    # 여러 제품 저장
     for _, row in dataframe.iterrows():
-        video_url = row['video_url']
-
-        # 중복 방지: 영상 링크로 유일성 확인
-        if YouTubeVideo.objects.filter(영상_링크=video_url).exists():
-            print(f"⚠️ 이미 존재하는 영상입니다: {video_url}")
-            continue
-
-        video = YouTubeVideo.objects.create(
-            extracted_date=datetime.strptime(str(row['extracted_date']), "%Y%m%d").date(),
-            upload_date=datetime.strptime(str(row['upload_date']), "%Y%m%d").date(),
-            channel_name=row['channel_name'],
-            title=row['title'],
-            video_url=video_url,
-            subscriber_count=row['subscriber_count'],
-            view_count=row['view_count'],
-            product_count=row['product_count'],
-            description=row['description']
-        )
-
-        # 제품 정보 저장
-        # 제품 정보 저장
-        if pd.notna(row['product_name']) and row['product_name'] != "없음":
+        if pd.notna(row['product_name']) and row['product_name']:
             YouTubeProduct.objects.create(
                 video=video,
-                product_image_link=row.get('product_image_link', None),
+                product_image_link=row.get('product_image_link'),
                 product_name=row['product_name'],
                 product_price=row['product_price'],
-                product_link=row.get('product_link', None),
+                product_link=row.get('product_link'),
             )
+
+    return 1
