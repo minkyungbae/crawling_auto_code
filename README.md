@@ -23,10 +23,12 @@ crawling_auto_code
 ├─ requirements.txt     # 패키지
 └─ youtube_crawling     # 주된 기능 폴더
    ├─ models.py
-   ├─ serializers
+   ├─ serializers       # serializer 관리 폴더
+   │  ├─ __init__.py
+   │  └─ video_ids_serializers.py
    ├─ tests.py
+   ├─ crawler.py        # 크롤링 코드 파일
    ├─ urls.py
-   └─ views
+   └─ views             # view 관리 폴더
       └─ longform_views.py
-
 ```
