@@ -1,7 +1,15 @@
-from django.urls import path
-from .views import views
+from django.urls import path, include
+from youtube_crawling.views.longform_views import YoutubeLongFormCrawlAPIView
+from rest_framework.routers import DefaultRouter
+from .views.longform_views import YouTubeVideoViewSet
 
-app_name = 'youtube_crawling'
+router = DefaultRouter()
+router.register(r'youtube-videos', YouTubeVideoViewSet)
+
 urlpatterns = [
-    path('longform/', views.LongForm.as_views()),
+    path('', include(router.urls)),
+]
+
+urlpatterns = [
+    path('longform/', YoutubeLongFormCrawlAPIView.as_view()),
 ]
