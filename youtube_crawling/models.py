@@ -2,7 +2,7 @@ from django.db import models
 
 class YouTubeVideo(models.Model):
     video_id = models.CharField(max_length=255, unique=True)
-    extracted_date = models.DateField()
+    extracted_date = models.CharField(max_length=255)
     upload_date = models.CharField(max_length=255)
     channel_name = models.CharField(max_length=255)
     title = models.CharField(max_length=255)
