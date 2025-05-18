@@ -19,13 +19,13 @@ def get_product_info(soup):
 
 # 메인 크롤링 함수
 def collect_video_data(driver, video_id):
-    base_url = "https://www.youtube.com/watch?v={video_id}"
+    base_url = f"https://www.youtube.com/watch?v={video_id}"
     driver.get(base_url)
     wait = WebDriverWait(driver, 10)
 
     # 제목 수집
     try:
-        title = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'h1.title'))).text.strip()
+        title = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'h1'))).text.strip()
     except Exception:
         title = "제목 수집 실패"
 
@@ -49,7 +49,8 @@ def collect_video_data(driver, video_id):
         view_count = "조회수 수집 실패"
 
     try:
-        upload_date = driver.find_element(By.CSS_SELECTOR, "#info-strings yt-formatted-string").text.strip()
+        upload_date_str = driver.find_element(By.CSS_SELECTOR, "#info-strings yt-formatted-string").text.strip()
+        upload_date = datetime.strptime(upload_date_str, "%Y. %m. %d.").date()
     except Exception:
         upload_date = "업로드일 수집 실패"
 
@@ -72,7 +73,7 @@ def collect_video_data(driver, video_id):
 
     # 더보기 설명
     try:
-        description_text = soup.select_one("#description yt-formatted-string").get_text(separator="\n").strip
+        description_text = soup.select_one("#description yt-formatted-string").get_text(separator="\n").strip()
     except Exception:
         description_text = "설명 수집 실패"
 
@@ -93,7 +94,7 @@ def collect_video_data(driver, video_id):
                 price = "가격 수집 실패"
 
             try:
-                link = product.select_one("a")["href"]
+                link = product.select_one(".product-item-description")
             except:
                 link = None
 
@@ -178,3 +179,4 @@ def save_youtube_data_to_db(dataframe):
             )
 
     return 1
+
