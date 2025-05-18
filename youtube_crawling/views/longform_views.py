@@ -6,7 +6,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from ..models import YouTubeVideo, YouTubeProduct
-from youtube_crawling.serializers.video_ids_serializers import YouTubeVideoSerializer
+from youtube_crawling.serializers.video_ids_serializers import YouTubeVideoSerializer, ProductSerializer
 from youtube_crawling.crawler import collect_video_data, save_youtube_data_to_db
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -20,7 +20,7 @@ class YoutubeLongFormCrawlAPIView(APIView):
                 'video_ids': openapi.Schema(
                     type=openapi.TYPE_ARRAY,
                     items=openapi.Items(type=openapi.TYPE_STRING),
-                    description='크롤링할 유튜브 영상 ID 리스트',
+                    description='크롤링할 유튜브 영상 ID 리스트를 입력해주세요.',
                 ),
             },
             required=['video_ids'],
@@ -69,4 +69,8 @@ class YoutubeLongFormCrawlAPIView(APIView):
 class YouTubeVideoViewSet(viewsets.ModelViewSet):
     queryset = YouTubeVideo.objects.all().order_by('-extracted_date')
     serializer_class = YouTubeVideoSerializer
+
+class YouTubeProductViewSet(viewsets.ModelViewSet):
+    queryset = YouTubeProduct.objects.all().order_by('video')
+    serializer_class = ProductSerializer
 
