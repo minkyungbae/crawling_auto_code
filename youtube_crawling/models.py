@@ -5,10 +5,10 @@ class YouTubeVideo(models.Model):
     extracted_date = models.CharField(max_length=255)
     upload_date = models.CharField(max_length=255)
     channel_name = models.CharField(max_length=255)
-    title = models.CharField(max_length=255)
-    video_url = models.URLField(unique=True)  # 중복 방지
     subscriber_count = models.CharField(max_length=255)
+    title = models.CharField(max_length=255)
     view_count = models.CharField(max_length=255)
+    video_url = models.URLField(unique=True)  # 중복 방지
     product_count = models.CharField(max_length=255)
     description = models.TextField()
 
