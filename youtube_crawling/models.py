@@ -18,10 +18,10 @@ class YouTubeVideo(models.Model):
 
 class YouTubeProduct(models.Model):
     video = models.ForeignKey(YouTubeVideo, related_name='products', on_delete=models.CASCADE)
-    product_image_link = models.CharField(max_length=255)
+    product_image_link = models.URLField(null=True, blank=True)
     product_name = models.CharField(max_length=255)
     product_price = models.CharField(max_length=100)
-    product_link = models.CharField(max_length=255)
+    product_link = models.URLField(null=True, blank=True)
 
     def __str__(self):
         return self.product_name
