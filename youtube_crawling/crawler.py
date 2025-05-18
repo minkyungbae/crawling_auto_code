@@ -1,13 +1,12 @@
-import pprint
 from .models import YouTubeVideo, YouTubeProduct
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
+from datetime import datetime
 import pandas as pd
 import time
-from datetime import datetime
 import re
 from typing import List, Tuple, Union
 
@@ -95,14 +94,9 @@ def collect_video_data(driver, video_id):
         print("더보기 버튼 클릭 실패:", e)
 
     # HTML 파싱
-    soup = BeautifulSoup(driver.page_source, 'html.parser')
-
-    # ✅ soup에 담긴 html 디버깅
-    pprint({"soup에 담긴 html": soup})
-
-    # ✅ 제품 개수 디버깅
-    product_count = get_product_info(soup)
-    print(f"제품 개수 : {product_count}")
+    soup = BeautifulSoup(driver.page_source, 'html.parser') # 조회수, 업로드일, 제품 수 추출
+    spans = soup.select('span.style-scope.yt-formatted-string.bold')
+    info_texts = [span.get_text(strip=True) for span in spans if span.get_text(strip=True)] # 공백 제외하고 실제 텍스트만 
 
     # 더보기 설명
     try:
@@ -133,11 +127,6 @@ def collect_video_data(driver, video_id):
                 product_price = product.find_element(By.CSS_SELECTOR, ".product-item-price").text.replace("₩", "").strip()
                 link_raw = product.find_element(By.CSS_SELECTOR, ".product-item-description").text.strip()
                 product_link = link_raw if not link_raw.startswith("http") else link_raw
-
-                # 객체 설명
-                soup = BeautifulSoup(driver.page_source, 'html.parser') # 조회수, 업로드일, 제품 수 추출
-                spans = driver.find_elements(By.CSS_SELECTOR, "span.style-scope.yt-formatted-string.bold")
-                info_texts = [span.get_text(strip=True) for span in spans if span.get_text(strip=True)] # 공백 제외하고 실제 텍스트만 추출
 
                 # 조회수, 업로드일, 제품 개수 들고오기
                 youtube_view_count, youtube_upload_date, youtube_product_count = extract_video_info(info_texts)
