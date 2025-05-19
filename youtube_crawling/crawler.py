@@ -185,31 +185,31 @@ def collect_video_data(driver, video_id):
             try:
                 """이미지 링크부터 시도"""
                 try:
-                    product_img = product.find_element(By.CSS_SELECTOR, "yt-img-shadow")
-                    print("🔍 이미지 outerHTML:", product_img.get_attribute("outerHTML"))  # 디버깅
-                    product_img_link = (
-                        product_img.get_attribute("src") or
-                        product_img.get_attribute("data-src") or
-                        product_img.get_attribute("srcset") or
-                        None
-                    )
+                    img_shadow = product.find_element(By.CSS_SELECTOR, "yt-img-shadow")
+                    print("🔍 이미지 outerHTML (yt-img-shadow):", img_shadow.get_attribute("outerHTML"))  # 디버깅
+
+                    # yt-img-shadow 내부 img 태그 찾기
+                    product_img = img_shadow.find_element(By.CSS_SELECTOR, "img#img")
+
+                    # src 속성 추출
+                    product_img_link = product_img.get_attribute("src") or \
+                        product_img.get_attribute("data-src") or \
+                        product_img.get_attribute("srcset") or None
                     if product_img_link:
                         print(f"✅ 제품 {idx} 이미지 링크: {product_img_link}")
                     else:
-                        print(f"⚠️ 제품 {idx} 이미지 링크: 이미지 링크 없음")
-                        print("🔍 이미지 outerHTML:", product_img.get_attribute("outerHTML"))
-                except Exception as e:
-                        print(f"❌ 제품 {idx}: 이미지 추출 실패 - {e}")
-
-                """# 이미지 링크가 없으면 yt-img-shadow의 스타일에서 다시 추출 시도"""
-                if not product_img_link:
-                    try:
-                        img_shadow = product.find_element(By.CSS_SELECTOR, "yt-img-shadow")
+                        # 스타일에서 배경 이미지 URL 시도
                         style = img_shadow.get_attribute("style")
                         match = re.search(r'url\(["\']?(.*?)["\']?\)', style)
                         product_img_link = match.group(1) if match else None
-                    except NoSuchElementException:
-                        product_img_link = None
+
+                        if product_img_link:
+                            print(f"✅ 제품 {idx} 이미지 링크(스타일에서): {product_img_link}")
+                        else:
+                            print(f"⚠️ 제품 {idx} 이미지 링크: 이미지 링크 없음")
+                            print("🔍 이미지 outerHTML (img):", product_img.get_attribute("outerHTML"))
+                except Exception as e:
+                    print(f"❌ 제품 {idx}: 이미지 추출 실패 - {e}")
 
                 # 디버깅
                 print(f"제품 {idx} 이미지 링크: {product_img_link}")
