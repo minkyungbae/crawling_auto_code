@@ -172,8 +172,8 @@ def collect_video_data(driver, video_id):
     product_info_list = []
 
     try:
-        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".product-item.style-scope.ytd-merch-shelf-item-renderer"))) # 제품 정보가 담긴 요소가 페이지에 로드될 때까지 대기
-        product_elements = soup.select(".product-item.style-scope.ytd-merch-shelf-item-renderer") # 상품 영역(여러 개일 수 있음) 요소들을 모두 가져오기
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "ytd-merch-shelf-item-renderer"))) # 제품 정보가 담긴 요소가 페이지에 로드될 때까지 대기
+        product_elements = driver.find_elements(By.CSS_SELECTOR, "ytd-merch-shelf-item-renderer") # 상품 영역(여러 개일 수 있음) 요소들을 모두 가져오기
         
         """
         제품 이미지 링크, 제품명, 제품 가격, 제품 구매 링크
