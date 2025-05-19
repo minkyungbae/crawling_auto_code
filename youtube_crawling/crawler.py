@@ -56,7 +56,7 @@ def collect_video_data(driver, video_id):
     # 제목 수집
     try:
         element = WebDriverWait(driver, 10).until(
-        EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.title yt-formatted-string"))
+        EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.style-scope.ytd-watch-metadata yt-formatted-string"))
     )
         title = element.text.strip()
     except Exception as e:
@@ -140,7 +140,7 @@ def collect_video_data(driver, video_id):
                 product_name = product.find_element(By.CSS_SELECTOR, ".product-item-title").text.strip()
                 product_price = product.find_element(By.CSS_SELECTOR, ".product-item-price").text.replace("₩", "").strip()
                 link_raw = product.find_element(By.CSS_SELECTOR, ".product-item-description").text.strip()
-                product_link = link_raw if not link_raw.startswith("http") else link_raw
+                product_link = link_raw if not link_raw.startswith("http") else f"http://{link_raw}"
 
                 # 조회수, 업로드일, 제품 개수 들고오기
                 youtube_view_count, youtube_upload_date, youtube_product_count = extract_video_info(info_texts)
