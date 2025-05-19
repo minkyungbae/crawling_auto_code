@@ -12,7 +12,7 @@ import json
 import re
 
 
-# ----------------------------- 파싱 함수 -----------------------------
+# ----------------------------- 파싱 함수(업로드일 날짜 표기, 조회수, 제품 수) -----------------------------
 
 def parse_subscriber_count(text: str) -> str:
     """구독자 수 텍스트를 숫자 형태로 변환 (예: 1.2만명 -> 12000)"""
@@ -75,7 +75,7 @@ def extract_video_info(info_texts: List[str]) -> Tuple[Union[int, None], str, Un
     return view_count, upload_date, product_count
 
 
-# ---------------------- 수집 기능 분리 ----------------------
+# ---------------------- 영상 기본 정보: 제목, 채널명, 구독자 수 ----------------------
 
 def extract_basic_video_info(driver) -> Tuple[str, str, str]:
     """영상 기본 정보: 제목, 채널명, 구독자 수 수집"""
@@ -104,6 +104,7 @@ def extract_basic_video_info(driver) -> Tuple[str, str, str]:
     return title, channel_name, subscriber_count
 
 
+# ---------------------- 더보기 클릭 및 더보기란 텍스트 추출 ----------------------
 def click_show_more_and_get_description(driver) -> str:
     """
     영상 설명란 '더보기' 클릭 후 텍스트 추출
@@ -136,7 +137,7 @@ def click_show_more_and_get_description(driver) -> str:
 
     return description
 
-#--------------------------------------- product json -------------------------------------
+#--------------------------------------- 제품 정보를 json으로 찾아서 갖고 오기 -------------------------------------
 def extract_products_from_json(driver) -> list:
     soup = BeautifulSoup(driver.page_source, 'html.parser')
     html_text = soup.prettify()
@@ -177,12 +178,44 @@ def extract_products_from_json(driver) -> list:
     extracted = []
     for i, item in enumerate(products):
         renderer = item.get("productListItemRenderer", {})
-        title = renderer.get("title", {}).get("simpleText")
+
+        # 제품명
+        product_name = renderer.get("title", {}).get("simpleText")
+        if product_name:
+            product_name = product_name.lstrip() # 맨 앞 공백만 제거
+
+
+        # 가격
         price_info = renderer.get("price")
         price = price_info.get("simpleText") if isinstance(price_info, dict) else price_info
         if price:
             price = price.replace(",", "").replace("₩", "").strip()
-        merchant = renderer.get("merchantName")
+
+
+        # 판매처 찾기
+        commands = renderer.get("onClickCommand", {}) \
+            .get("commandExecutorCommand", {}) \
+            .get("commands", [])
+
+        merchant_link = None
+        for cmd in commands:
+            url = cmd.get("commandMetadata", {}).get("webCommandMetadata", {}).get("url")
+            if url:
+                merchant_link = url
+                break
+
+        # 💡 HTML에서 판매처 링크를 보완 추출
+        if not merchant_link:
+            descriptions = soup.select("div.product-item-description")
+            if i < len(descriptions):
+                merchant_text = descriptions[i].get_text(strip=True)
+                if merchant_text:
+                    # http 없는 링크 처리
+                    merchant_link = (
+                        "https://" + merchant_text if not merchant_text.startswith("http") else merchant_text
+                    )
+        
+
         thumbnails = renderer.get("thumbnail", {}).get("thumbnails", [])
 
         # 128px 썸네일이 없을 경우 첫 번째 이미지 fallback
@@ -194,11 +227,11 @@ def extract_products_from_json(driver) -> list:
         if not image_url and thumbnails:
             image_url = thumbnails[0].get("url")
 
-        print(f"✅ 상품 {i+1}: {title}, ₩{price}, 판매처: {merchant}, 이미지: {image_url}")
+        print(f"✅ 상품 {i+1}: {product_name}, 가격: {price}, 판매처: {merchant_link}, 이미지: {image_url}")
         extracted.append({
-            "product_name": title,
+            "product_name": product_name,
             "product_price": price,
-            "product_link": merchant,
+            "product_link": merchant_link,
             "product_image_link": image_url,
         })
 
@@ -277,64 +310,6 @@ def extract_products_and_metadata(driver, video_id: str, title: str, channel_nam
             "product_price": None,
             "product_link": None})
         
-    # merch_shelf = soup.find('ytd-merch-shelf-renderer')
-    # if not merch_shelf:
-    #     print("⚠️ merch shelf는 있지만 내부 제품 항목이 없음")
-    #     product_info_list.append({**product_data,
-    #         "product_image_link": None,
-    #         "product_name": None,
-    #         "product_price": None,
-    #         "product_link": None})
-    #     return pd.DataFrame(product_info_list)
-
-    # with open("debug_youtube_merch.html", "w", encoding="utf-8") as f:
-    #     f.write(driver.page_source)
-
-    
-    # try:
-    #     product_items = merch_shelf.find_all('ytd-merch-shelf-item-renderer')
-    #     print(f"  - 🛍️ 제품 블록 개수: {len(product_items)}")
-
-    #     for i, item in enumerate(product_items):
-    #         try:
-    #             image_tag = item.select_one("yt-img-shadow img")
-    #             image_url = image_tag['src'] if image_tag and image_tag.has_attr("src") else None
-
-    #             product_name_tag = item.select_one(".product-item-title")
-    #             product_name = product_name_tag.text.strip() if product_name_tag else None
-
-    #             price_tag = item.select_one(".product-item-price")
-    #             price = price_tag.text.replace("₩", "").strip() if price_tag else None
-
-    #             merchant_tag = item.select_one(".product-item-description")
-    #             merchant = merchant_tag.text if merchant_tag else None
-
-    #             print(f"    • 상품 {i+1}: {product_name} | 이미지 링크 : {image_url}")
-
-    #             product_info_list.append({**product_data,
-    #                 "product_image_link": image_url,
-    #                 "product_name": product_name,
-    #                 "product_price": price,
-    #                 "product_link": merchant})
-
-    #         except Exception as e:
-    #             print(f"    - {i+1} 번째 제품 처리 중 오류: {e}")
-
-    #     if not product_items:
-    #         print("  - ⚠️ 상품 없음 → 기본 정보만 저장")
-    #         product_info_list.append({**product_data,
-    #             "product_image_link": None,
-    #             "product_name": None,
-    #             "product_price": None,
-    #             "product_link": None})
-
-    # except Exception as e:
-    #     print(f"  - ⚠️ 전체 상품 정보 파싱 실패: {e}")
-    #     product_info_list.append({**product_data,
-    #         "product_image_link": None,
-    #         "product_name": None,
-    #         "product_price": None,
-    #         "product_link": None})
 
     return pd.DataFrame(product_info_list)
 
