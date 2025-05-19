@@ -181,10 +181,11 @@ def collect_video_data(driver, video_id):
         제품 이미지 링크, 제품명, 제품 가격, 제품 구매 링크
         """
         for idx, product in enumerate(product_elements):
+            product_img_link = None
             try:
                 """이미지 링크부터 시도"""
                 try:
-                    WebDriverWait(product, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "img#img")))
+                    WebDriverWait(product, 10).until(lambda d: product.find_element(By.CSS_SELECTOR, "img#img").get_attribute("src"))
                     product_img = product.find_element(By.CSS_SELECTOR, "img#img")
                     print("🔍 이미지 outerHTML:", product_img.get_attribute("outerHTML"))  # 디버깅
                     product_img_link = (
@@ -193,13 +194,15 @@ def collect_video_data(driver, video_id):
                         product_img.get_attribute("srcset") or
                         "이미지 링크 없음"
                     )
-                    print(f"제품 {idx} 이미지 링크: {product_img_link}")
-                except NoSuchElementException:
-                    print(f"제품 {idx}: 이미지 태그를 찾지 못함")
+                    if product_img_link:
+                        print(f"✅ 제품 {idx} 이미지 링크: {product_img_link}")
+                    else:
+                        print(f"⚠️ 제품 {idx} 이미지 링크: 이미지 링크 없음")
+                        print("🔍 이미지 outerHTML:", product_img.get_attribute("outerHTML"))
                 except Exception as e:
-                    print(f"❗ 제품 {idx}: 예외 발생 - {e}")
+                        print(f"❌ 제품 {idx}: 이미지 추출 실패 - {e}")
 
-                """yt-img-shadow style에서 background-image 추출"""
+                """# 이미지 링크가 없으면 yt-img-shadow의 스타일에서 다시 추출 시도"""
                 if not product_img_link:
                     try:
                         img_shadow = product.find_element(By.CSS_SELECTOR, "yt-img-shadow")
@@ -211,6 +214,7 @@ def collect_video_data(driver, video_id):
 
                 # 디버깅
                 print(f"제품 {idx} 이미지 링크: {product_img_link}")
+
                 product_name = product.find_element(By.CSS_SELECTOR, ".product-item-title").text.strip()
                 product_price = product.find_element(By.CSS_SELECTOR, ".product-item-price").text.replace("₩", "").strip()
                 link_raw = product.find_element(By.CSS_SELECTOR, ".product-item-description").text.strip()
