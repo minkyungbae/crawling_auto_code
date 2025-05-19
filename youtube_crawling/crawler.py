@@ -3,6 +3,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException
 from bs4 import BeautifulSoup
 from datetime import datetime
 import pandas as pd
@@ -150,26 +151,44 @@ def extract_products_and_metadata(driver, video_id, title, channel_name, subscri
 
     try:
         products = soup.select("ytd-merch-shelf-renderer")
-        for p in products:
-            image_url = p.find(attrs={'class': 'product-item-image style-scope ytd-merch-shelf-item-renderer no-transition'}).find(attrs={'class': 'style-scope yt-img-shadow'}).get("src")
-            product_name = p.find(attrs={'class': 'small-item-hide product-item-title style-scope ytd-merch-shelf-item-renderer'}).text.strip()
-            price = p.find(attrs={'class': 'product-item-price style-scope ytd-merch-shelf-item-renderer'}).text.replace("₩", "").strip()
-            merchant = p.find(attrs={'class': 'product-item-description style-scope ytd-merch-shelf-item-renderer'}).text
+        print(f"  - 🛍️ 제품 블록 개수: {len(products)}")
 
-            product_info_list.append({**product_data,
-                "product_image_link": image_url,
-                "product_name": product_name,
-                "product_price": price,
-                "product_link": merchant})
+        for i, p in enumerate(products):
+            try:
+                image_tag_wrapper = p.find(attrs={'class': 'product-item-image style-scope ytd-merch-shelf-item-renderer no-transition'})
+                image_tag = image_tag_wrapper.find(attrs={'class': 'style-scope yt-img-shadow'}) if image_tag_wrapper else None
+                image_url = image_tag.get("src") if image_tag and hasattr(image_tag, "get") else None
+
+                product_name_tag = p.find(attrs={'class': 'small-item-hide product-item-title style-scope ytd-merch-shelf-item-renderer'})
+                product_name = product_name_tag.text.strip() if product_name_tag else None
+
+                price_tag = p.find(attrs={'class': 'product-item-price style-scope ytd-merch-shelf-item-renderer'})
+                price = price_tag.text.replace("₩", "").strip() if price_tag else None
+
+                merchant_tag = p.find(attrs={'class': 'product-item-description style-scope ytd-merch-shelf-item-renderer'})
+                merchant = merchant_tag.text if merchant_tag else None
+
+                print(f"    • 상품 {i+1}: {product_name} | 가격: {price} | 판매처: {merchant}")
+
+                product_info_list.append({**product_data,
+                    "product_image_link": image_url,
+                    "product_name": product_name,
+                    "product_price": price,
+                    "product_link": merchant})
+
+            except Exception as e:
+                print(f"    ⚠️ 상품 파싱 실패: {e}")
 
         if not products:
+            print("  - ⚠️ 상품 없음 → 기본 정보만 저장")
             product_info_list.append({**product_data,
                 "product_image_link": None,
                 "product_name": None,
                 "product_price": None,
                 "product_link": None})
 
-    except Exception:
+    except Exception as e:
+        print(f"  - ⚠️ 전체 상품 정보 파싱 실패: {e}")
         product_info_list.append({**product_data,
             "product_image_link": None,
             "product_name": None,
@@ -181,11 +200,16 @@ def extract_products_and_metadata(driver, video_id, title, channel_name, subscri
 
 # ---------------------- 메인 진입 함수 ----------------------
 
-def collect_video_data(driver, video_id):
+def collect_video_data(driver, video_id, index=None, total=None):
     base_url = f"https://www.youtube.com/watch?v={video_id}"
     driver.get(base_url)
 
+    if index is not None and total is not None:
+        print(f"\n📹 ({index}/{total}) 크롤링 중: {video_id}")
+
     title, channel_name, subscriber_count = extract_basic_video_info(driver)
+    print(f"  - 제목: {title} | 채널: {channel_name} | 구독자: {subscriber_count}")
+
     description = click_show_more_and_get_description(driver)
     df = extract_products_and_metadata(driver, video_id, title, channel_name, subscriber_count, description)
 
