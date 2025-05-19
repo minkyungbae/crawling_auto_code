@@ -22,12 +22,15 @@ def get_product_info(soup):
 
 # 업로드일, 조회수, 제품 수 추출 함수
 def extract_video_info(info_texts: List[str]) -> Tuple[str, Union[str, None], Union[int, None]]:
-    youtube_upload_date = "업로드 날짜 정보 못 찾음"
     youtube_view_count = None
+    youtube_upload_date = "업로드 날짜 정보 못 찾음"
     youtube_product_count = None
 
 
     for text in info_texts:
+        soup = BeautifulSoup(text, 'html.parser')
+        text = soup.get_text(separator=' ').strip()
+
         if m := re.search(r'(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.', text):
             year, month, day = m.groups()
             youtube_upload_date = f"{year}{int(month):02d}{int(day):02d}"
@@ -36,12 +39,12 @@ def extract_video_info(info_texts: List[str]) -> Tuple[str, Union[str, None], Un
             youtube_upload_date = f"{year}{int(month):02d}{int(day):02d}"
 
         if match_views := re.search(r'조회수\s*([\d,]+)회', text):
-            youtube_view_count = match_views.group(1)
+            youtube_view_count = match_views.group(1).replace(',', '')
 
         if match_products := re.search(r'(\d+)\s*개\s*제품', text):
             youtube_product_count = int(match_products.group(1))
 
-    return youtube_upload_date, youtube_view_count, youtube_product_count
+    return youtube_view_count, youtube_upload_date, youtube_product_count
 
 
 # 메인 크롤링 함수
@@ -105,10 +108,10 @@ def collect_video_data(driver, video_id):
         if not description.strip():
             description = "더보기란에 설명 없음"
             
-    except Exception:
+    except Exception as e:
         # 설명란 찾기 실패 또는 텍스트 추출 중 에러 발생 시
         print("더보기 클릭 또는 설명 추출 실패:", e)
-        description = "더보기란에 설명 없음"
+        description = "더보기란에 설명 없음" 
 
     # 여러 제품 수집
     product_info_list = []
@@ -126,7 +129,7 @@ def collect_video_data(driver, video_id):
                 product_name = product.find_element(By.CSS_SELECTOR, ".product-item-title").text.strip()
                 product_price = product.find_element(By.CSS_SELECTOR, ".product-item-price").text.replace("₩", "").strip()
                 link_raw = product.find_element(By.CSS_SELECTOR, ".product-item-description").text.strip()
-                product_link = link_raw if not link_raw.startswith("http") else link_raw
+                product_link = link_raw if link_raw.startswith("http") else None
 
                 # 조회수, 업로드일, 제품 개수 들고오기
                 youtube_view_count, youtube_upload_date, youtube_product_count = extract_video_info(info_texts)
