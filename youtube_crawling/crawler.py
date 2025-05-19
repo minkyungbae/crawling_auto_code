@@ -39,7 +39,7 @@ def extract_video_info(info_texts: List[str]) -> Tuple[str, Union[str, None], Un
             youtube_upload_date = f"{year}{int(month):02d}{int(day):02d}"
 
         if match_views := re.search(r'조회수\s*([\d,]+)회', text):
-            youtube_view_count = match_views.group(1).replace(',', '')
+            youtube_view_count = int(match_views.group(1).replace(',', ''))
 
         if match_products := re.search(r'(\d+)\s*개\s*제품', text):
             youtube_product_count = int(match_products.group(1))
@@ -55,19 +55,30 @@ def collect_video_data(driver, video_id):
     
     # 제목 수집
     try:
-        title = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "h1.title yt-formatted-string"))).text.strip()
-    except Exception:
+        element = WebDriverWait(driver, 10).until(
+        EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.title yt-formatted-string"))
+    )
+        title = element.text.strip()
+    except Exception as e:
         title = "제목 수집 실패"
+        print("Error:", e)
+    print("제목:", title)
 
     # 채널명
     try:
-        channel_name = driver.find_element(By.CSS_SELECTOR, ".ytd-channel-name").text.strip()
+        element = WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "yt-formatted-string#text a.yt-simple-endpoint"))
+    )
+        channel_name = element.text.strip()
     except Exception:
         channel_name = "채널명 수집 실패"
 
     # 구독자 수
     try:
-        subscriber_count = driver.find_element(By.CSS_SELECTOR, ".ytd-video-owner-renderer#owner-sub-count").text.strip()
+        element = WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "#owner-sub-count"))
+    )
+        subscriber_count = element.text.strip()
     except Exception:
         subscriber_count = "구독자 수 수집 실패"
 
@@ -129,7 +140,7 @@ def collect_video_data(driver, video_id):
                 product_name = product.find_element(By.CSS_SELECTOR, ".product-item-title").text.strip()
                 product_price = product.find_element(By.CSS_SELECTOR, ".product-item-price").text.replace("₩", "").strip()
                 link_raw = product.find_element(By.CSS_SELECTOR, ".product-item-description").text.strip()
-                product_link = link_raw if link_raw.startswith("http") else None
+                product_link = link_raw if not link_raw.startswith("http") else link_raw
 
                 # 조회수, 업로드일, 제품 개수 들고오기
                 youtube_view_count, youtube_upload_date, youtube_product_count = extract_video_info(info_texts)
