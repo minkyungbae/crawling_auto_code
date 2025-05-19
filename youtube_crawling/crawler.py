@@ -207,9 +207,9 @@ def collect_video_data(driver, video_id):
 
             """제품명, 제품 가격, 제품 구매 링크"""
             try:
-                product_name = product.find_element(By.CSS_SELECTOR, ".product-item-title").text.strip()
-                product_price = product.find_element(By.CSS_SELECTOR, ".product-item-price").text.replace("₩", "").strip()
-                link_raw = product.find_element(By.CSS_SELECTOR, ".product-item-description").text.strip()
+                product_name = product.select_one(".product-item-title").text.strip()
+                product_price = product.select_one(".product-item-price").text.replace("₩", "").strip()
+                link_raw = product.select_one(".product-item-description").text.strip()
                 product_link = link_raw if link_raw.startswith("http") else f"http://{link_raw}"
 
                 # 조회수, 업로드일, 제품 개수 들고오기
@@ -267,7 +267,7 @@ def collect_video_data(driver, video_id):
             
     except Exception as e:
         print("제품 정보 추출 실패:", e)
-        
+
     return pd.DataFrame(product_info_list)
 
 
