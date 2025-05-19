@@ -147,6 +147,25 @@ def extract_products_and_metadata(driver, video_id: str, title: str, channel_nam
     today_str = datetime.today().strftime('%Y%m%d')
     base_url = f"https://www.youtube.com/watch?v={video_id}"
 
+
+    # right-arrow 버튼이 있으면 클릭(제품이 여러 개일 시)
+    clicked = False
+    if soup.find(id="right-arrow"):
+        try:
+            right_arrow = driver.find_element(By.ID, "right-arrow")
+            right_arrow.click()
+            print("오른쪽 화살표 클릭 완료")
+            time.sleep(1)  # 로딩 대기
+            clicked = True
+        except Exception as e:
+            print("오른쪽 화살표 클릭 실패:", e)
+    else:
+        print("오른쪽 화살표 버튼 없음")
+
+    # 🔄 클릭했다면 soup 갱신
+    if clicked:
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+
     product_info_list = []
     product_data = {
         "video_id": video_id,
@@ -168,7 +187,7 @@ def extract_products_and_metadata(driver, video_id: str, title: str, channel_nam
         for i, p in enumerate(products):
             try:
                 image_tag_wrapper = p.find(attrs={'class': 'product-item-image style-scope ytd-merch-shelf-item-renderer no-transition'})
-                image_tag = image_tag_wrapper.find(attrs={'class': 'style-scope yt-img-shadow'}) if image_tag_wrapper else None
+                image_tag = image_tag_wrapper.find('img', attrs={'class': 'style-scope yt-img-shadow'}) if image_tag_wrapper else None
                 image_url = image_tag.get("src") if image_tag else None
 
                 product_name_tag = p.find(attrs={'class': 'small-item-hide product-item-title style-scope ytd-merch-shelf-item-renderer'})
@@ -180,7 +199,7 @@ def extract_products_and_metadata(driver, video_id: str, title: str, channel_nam
                 merchant_tag = p.find(attrs={'class': 'product-item-description style-scope ytd-merch-shelf-item-renderer'})
                 merchant = merchant_tag.text if merchant_tag else None
 
-                print(f"    • 상품 {i+1}: {product_name} | 가격: {price} | 판매처: {merchant}")
+                print(f"    • 상품 {i+1}: {product_name} | 이미지 링크 : {image_url}")
 
                 product_info_list.append({**product_data,
                     "product_image_link": image_url,
