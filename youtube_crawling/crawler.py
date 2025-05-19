@@ -3,6 +3,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException
 from bs4 import BeautifulSoup
 from datetime import datetime
 import pandas as pd
@@ -18,6 +19,25 @@ def get_product_info(soup):
         return len(product_items)
     except Exception:
         return 0
+    
+"""
+구독자 수 표기 방식 변환 함수
+"""
+def parse_subscriber_count(text):
+    match = re.search(r'([\d\.]+)([천만]?)명', text) # 숫자+단위 추출
+    if not match:
+        return "0" # 매칭 안 되면 0 반환
+
+    number = float(match.group(1)) # 숫자 부분 (정수/소수점 포함)
+    unit = match.group(2) # 단위: 천/만
+
+    # 단위에 따라 숫자 변환 
+    if unit == '천':
+        number *= 1_000
+    elif unit == '만':
+        number *= 10_000
+
+    return f"{int(number):,}"  # 쉼표 넣은 문자열 반환
 
 
 # 업로드일, 조회수, 제품 수 추출 함수
@@ -31,6 +51,9 @@ def extract_video_info(info_texts: List[str]) -> Tuple[str, Union[str, None], Un
         soup = BeautifulSoup(text, 'html.parser')
         text = soup.get_text(separator=' ').strip()
 
+        """
+        업로드 날짜 변환 코드(숫자일 시, 한국어 표기일 시)
+        """
         if m := re.search(r'(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.', text):
             year, month, day = m.groups()
             youtube_upload_date = f"{year}{int(month):02d}{int(day):02d}"
@@ -38,9 +61,15 @@ def extract_video_info(info_texts: List[str]) -> Tuple[str, Union[str, None], Un
             year, month, day = m.groups()
             youtube_upload_date = f"{year}{int(month):02d}{int(day):02d}"
 
+        """
+        조회수
+        """
         if match_views := re.search(r'조회수\s*([\d,]+)회', text):
             youtube_view_count = int(match_views.group(1).replace(',', ''))
 
+        """
+        제품 개수
+        """
         if match_products := re.search(r'(\d+)\s*개\s*제품', text):
             youtube_product_count = int(match_products.group(1))
 
@@ -53,7 +82,9 @@ def collect_video_data(driver, video_id):
     driver.get(base_url)
     wait = WebDriverWait(driver, 10)
     
-    # 제목 수집
+    """
+    제목
+    """
     try:
         element = WebDriverWait(driver, 10).until(
         EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.style-scope.ytd-watch-metadata yt-formatted-string"))
@@ -64,7 +95,9 @@ def collect_video_data(driver, video_id):
         print("Error:", e)
     print("제목:", title)
 
-    # 채널명
+    """
+    채널명
+    """
     try:
         element = WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, "yt-formatted-string#text a.yt-simple-endpoint"))
@@ -73,16 +106,21 @@ def collect_video_data(driver, video_id):
     except Exception:
         channel_name = "채널명 수집 실패"
 
-    # 구독자 수
+    """
+    구독자 수
+    """
     try:
         element = WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, "#owner-sub-count"))
     )
-        subscriber_count = element.text.strip()
+        subscriber_text = element.text.strip()
+        subscriber_count = parse_subscriber_count(subscriber_text)
     except Exception:
         subscriber_count = "구독자 수 수집 실패"
 
-    # 스크롤하여 더보기 버튼 클릭
+    """
+    스크롤하여 더보기 버튼 클릭
+    """
     try:
         time.sleep(1)
         body = driver.find_element(By.TAG_NAME, 'body')
@@ -107,12 +145,16 @@ def collect_video_data(driver, video_id):
     except Exception as e:
         print("더보기 버튼 클릭 실패:", e)
 
-    # HTML 파싱
+    """
+    HTML 파싱
+    """
     soup = BeautifulSoup(driver.page_source, 'html.parser') # 조회수, 업로드일, 제품 수 추출
     spans = soup.select("span.style-scope.yt-formatted-string.bold")
     info_texts = [span.get_text(strip=True) for span in spans if span.get_text(strip=True)] # 공백 제외하고 실제 텍스트만 
 
-    # 더보기 설명
+    """
+    더보기 설명란 들고 오기
+    """
     try:
         description = driver.find_element(By.ID, "description-inline-expander").text
         # 설명이 비어있을 경우, 기본 메시지로 대체
@@ -124,7 +166,9 @@ def collect_video_data(driver, video_id):
         print("더보기 클릭 또는 설명 추출 실패:", e)
         description = "더보기란에 설명 없음" 
 
-    # 여러 제품 수집
+    """
+    여러 제품 수집
+    """
     product_info_list = []
 
     try:
@@ -136,7 +180,14 @@ def collect_video_data(driver, video_id):
         # 최소 1개 이상 제품이 존재할 경우
         for product in product_elements:
             try:
-                product_img_link = product.find_element(By.CSS_SELECTOR, ".yt-img-shadow").get_attribute("src")
+                """
+                제품 이미지 링크, 제품명, 제품 가격, 제품 구매 링크
+                """
+                try:
+                    product_img = product.find_element(By.CSS_SELECTOR, "img.style-scope.yt-img-shadow")
+                    product_img_link = product_img.get_attribute("src")
+                except NoSuchElementException:
+                    product_img_link = None  # 혹은 로그 출력
                 product_name = product.find_element(By.CSS_SELECTOR, ".product-item-title").text.strip()
                 product_price = product.find_element(By.CSS_SELECTOR, ".product-item-price").text.replace("₩", "").strip()
                 link_raw = product.find_element(By.CSS_SELECTOR, ".product-item-description").text.strip()
@@ -148,6 +199,9 @@ def collect_video_data(driver, video_id):
                 # 추출일 날짜 문자열(YYYYMMDD)
                 today_str_four = datetime.today().strftime('%Y%m%d')
 
+                """
+                의미있는 값일 시, 저장
+                """
                 if any([product_img_link, product_name, product_price, product_link]):
                     product_info_list.append({
                         "video_id": video_id,
@@ -166,12 +220,13 @@ def collect_video_data(driver, video_id):
                         "product_link": product_link,
                     })
 
-
             except Exception as inner_e:
                 print("🔸 일부 제품 정보 추출 실패:", inner_e)
 
         else:
-            # 제품이 없을 경우에도 영상 정보는 저장
+            """
+            제품이 없을 경우에도 영상 정보는 저장
+            """
             product_info_list.append({
                 "video_id": video_id,
                 "title": title,
@@ -194,25 +249,9 @@ def collect_video_data(driver, video_id):
     return pd.DataFrame(product_info_list)
 
 
-# 구독자 수 표기 방식 변환 함수
-def parse_subscriber_count(text):
-    match = re.search(r'([\d\.]+)([천만]?)명', text) # 숫자+단위 추출
-    if not match:
-        return "0" # 매칭 안 되면 0 반환
-
-    number = float(match.group(1)) # 숫자 부분 (정수/소수점 포함)
-    unit = match.group(2) # 단위: 천/만
-
-    # 단위에 따라 숫자 변환 
-    if unit == '천':
-        number *= 1_000
-    elif unit == '만':
-        number *= 10_000
-
-    return f"{int(number):,}"  # 쉼표 넣은 문자열 반환
-
-
-# DB에 저장하는 함수
+"""
+DB에 저장하는 함수
+"""
 def save_youtube_data_to_db(dataframe):
     if dataframe.empty:
         return 0
@@ -238,7 +277,9 @@ def save_youtube_data_to_db(dataframe):
         description=row['description']
     )
 
-    # 여러 제품 저장
+    """
+    여러 제품 저장
+    """
     for _, row in dataframe.iterrows():
         if pd.notna(row['product_name']) and row['product_name']:
             YouTubeProduct.objects.create(
