@@ -177,28 +177,32 @@ def collect_video_data(driver, video_id):
         # 상품 영역(여러 개일 수 있음) 요소들을 모두 가져오기
         product_elements = driver.find_elements(By.CSS_SELECTOR, "ytd-merch-shelf-item-renderer")
         
-
-        # ⚠️ 디버깅
+        """
+        제품 이미지 링크, 제품명, 제품 가격, 제품 구매 링크
+        """
         for idx, product in enumerate(product_elements):
             try:
-                product_img = product.find_element(By.CSS_SELECTOR, "img.style-scope.yt-img-shadow")
-                product_img_link = driver.execute_script("return arguments[0].src;", product_img)
-                print(f"제품 {idx} 이미지 링크: {product_img_link}")
-            except NoSuchElementException:
-                print(f"제품 {idx}: 이미지 태그를 찾지 못함")
-
-
-        # 최소 1개 이상 제품이 존재할 경우
-        for product in product_elements:
-            try:
-                """
-                제품 이미지 링크, 제품명, 제품 가격, 제품 구매 링크
-                """
+                """이미지 링크부터 시도"""
                 try:
                     product_img = product.find_element(By.CSS_SELECTOR, "img.style-scope.yt-img-shadow")
                     product_img_link = product_img.get_attribute("src")
+                    print(f"제품 {idx} 이미지 링크: {product_img_link}")
                 except NoSuchElementException:
-                    product_img_link = None  # 혹은 로그 출력
+                    print(f"제품 {idx}: 이미지 태그를 찾지 못함")
+
+                """yt-img-shadow style에서 background-image 추출"""
+                if not product_img_link:
+                    try:
+                        img_shadow = product.find_element(By.CSS_SELECTOR, "yt-img-shadow")
+                        style = img_shadow.get_attribute("style")
+                        match = re.search(r'url\(["\']?(.*?)["\']?\)', style)
+                        product_img_link = match.group(1) if match else None
+                    except NoSuchElementException:
+                        product_img_link = None
+
+                # 디버깅
+                print(f"제품 {idx} 이미지 링크: {product_img_link}")
+
                 product_name = product.find_element(By.CSS_SELECTOR, ".product-item-title").text.strip()
                 product_price = product.find_element(By.CSS_SELECTOR, ".product-item-price").text.replace("₩", "").strip()
                 link_raw = product.find_element(By.CSS_SELECTOR, ".product-item-description").text.strip()
