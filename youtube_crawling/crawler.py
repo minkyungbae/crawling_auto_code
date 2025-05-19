@@ -52,7 +52,7 @@ def collect_video_data(driver, video_id):
     
     # 제목 수집
     try:
-        title = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'h1'))).text.strip()
+        title = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "h1.title yt-formatted-string"))).text.strip()
     except Exception:
         title = "제목 수집 실패"
 
@@ -64,7 +64,7 @@ def collect_video_data(driver, video_id):
 
     # 구독자 수
     try:
-        subscriber_count = driver.find_element(By.CSS_SELECTOR, ".ytd-video-owner-renderer").text.strip()
+        subscriber_count = driver.find_element(By.CSS_SELECTOR, ".ytd-video-owner-renderer#owner-sub-count").text.strip()
     except Exception:
         subscriber_count = "구독자 수 수집 실패"
 
@@ -95,12 +95,12 @@ def collect_video_data(driver, video_id):
 
     # HTML 파싱
     soup = BeautifulSoup(driver.page_source, 'html.parser') # 조회수, 업로드일, 제품 수 추출
-    spans = soup.select('span.style-scope.yt-formatted-string.bold')
+    spans = soup.select("span.style-scope.yt-formatted-string.bold")
     info_texts = [span.get_text(strip=True) for span in spans if span.get_text(strip=True)] # 공백 제외하고 실제 텍스트만 
 
     # 더보기 설명
     try:
-        description = driver.find_element(By.ID, 'description-inline-expander').text
+        description = driver.find_element(By.ID, "description-inline-expander").text
         # 설명이 비어있을 경우, 기본 메시지로 대체
         if not description.strip():
             description = "더보기란에 설명 없음"
@@ -122,7 +122,7 @@ def collect_video_data(driver, video_id):
         # 최소 1개 이상 제품이 존재할 경우
         for product in product_elements:
             try:
-                product_img_link = product.find_element(By.CSS_SELECTOR, "#img").get_attribute("src")
+                product_img_link = product.find_element(By.CSS_SELECTOR, ".yt-img-shadow").get_attribute("src")
                 product_name = product.find_element(By.CSS_SELECTOR, ".product-item-title").text.strip()
                 product_price = product.find_element(By.CSS_SELECTOR, ".product-item-price").text.replace("₩", "").strip()
                 link_raw = product.find_element(By.CSS_SELECTOR, ".product-item-description").text.strip()
