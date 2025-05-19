@@ -243,13 +243,14 @@ def save_youtube_data_to_db(dataframe):
     )
 
     for _, row in dataframe.iterrows():
-        if pd.notna(row['product_name']) and row['product_name']:
+        product_name = row.get('product_name')
+        if product_name and pd.notna(product_name):
             YouTubeProduct.objects.create(
                 video=video,
                 product_image_link=row.get('product_image_link'),
-                product_name=row['product_name'],
-                product_price=row['product_price'],
+                product_name=product_name,
+                product_price=row.get('product_price'),
                 product_link=row.get('product_link'),
             )
-
+    print(f"✅ 영상 및 제품 정보 저장 완료: {video_id}")
     return 1
