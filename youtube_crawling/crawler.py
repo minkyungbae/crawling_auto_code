@@ -184,11 +184,20 @@ def collect_video_data(driver, video_id):
             try:
                 """이미지 링크부터 시도"""
                 try:
-                    product_img = product.find_element(By.CSS_SELECTOR, "img.style-scope.yt-img-shadow")
-                    product_img_link = product_img.get_attribute("src")
+                    WebDriverWait(product, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "img#img")))
+                    product_img = product.find_element(By.CSS_SELECTOR, "img#img")
+                    print("🔍 이미지 outerHTML:", product_img.get_attribute("outerHTML"))  # 디버깅
+                    product_img_link = (
+                        product_img.get_attribute("src") or
+                        product_img.get_attribute("data-src") or
+                        product_img.get_attribute("srcset") or
+                        "이미지 링크 없음"
+                    )
                     print(f"제품 {idx} 이미지 링크: {product_img_link}")
                 except NoSuchElementException:
                     print(f"제품 {idx}: 이미지 태그를 찾지 못함")
+                except Exception as e:
+                    print(f"❗ 제품 {idx}: 예외 발생 - {e}")
 
                 """yt-img-shadow style에서 background-image 추출"""
                 if not product_img_link:
@@ -202,7 +211,6 @@ def collect_video_data(driver, video_id):
 
                 # 디버깅
                 print(f"제품 {idx} 이미지 링크: {product_img_link}")
-
                 product_name = product.find_element(By.CSS_SELECTOR, ".product-item-title").text.strip()
                 product_price = product.find_element(By.CSS_SELECTOR, ".product-item-price").text.replace("₩", "").strip()
                 link_raw = product.find_element(By.CSS_SELECTOR, ".product-item-description").text.strip()
@@ -238,26 +246,26 @@ def collect_video_data(driver, video_id):
             except Exception as inner_e:
                 print("🔸 일부 제품 정보 추출 실패:", inner_e)
 
-        else:
-            """
-            제품이 없을 경우에도 영상 정보는 저장
-            """
-            product_info_list.append({
-                "video_id": video_id,
-                "title": title,
-                "channel_name": channel_name,
-                "subscriber_count": subscriber_count,
-                "view_count": youtube_view_count,
-                "upload_date": youtube_upload_date,
-                "extracted_date": today_str_four,
-                "video_url": base_url,
-                "product_count": 0,
-                "description": description,
-                "product_name": None,
-                "product_price": None,
-                "product_link": None,
-                "product_image_link": None,
-            })
+            else:
+                """
+                제품이 없을 경우에도 영상 정보는 저장
+                """
+                product_info_list.append({
+                    "video_id": video_id,
+                    "title": title,
+                    "channel_name": channel_name,
+                    "subscriber_count": subscriber_count,
+                    "view_count": youtube_view_count,
+                    "upload_date": youtube_upload_date,
+                    "extracted_date": today_str_four,
+                    "video_url": base_url,
+                    "product_count": 0,
+                    "description": description,
+                    "product_name": None,
+                    "product_price": None,
+                    "product_link": None,
+                    "product_image_link": None,
+                })
             
     except Exception as e:
         print("제품 정보 추출 실패:", e)
