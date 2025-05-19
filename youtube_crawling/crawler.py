@@ -185,7 +185,6 @@ def collect_video_data(driver, video_id):
             try:
                 """이미지 링크부터 시도"""
                 try:
-                    WebDriverWait(product, 10).until(lambda d: product.find_element(By.CSS_SELECTOR, "img#img").get_attribute("src"))
                     product_img = product.find_element(By.CSS_SELECTOR, "img#img")
                     print("🔍 이미지 outerHTML:", product_img.get_attribute("outerHTML"))  # 디버깅
                     product_img_link = (
