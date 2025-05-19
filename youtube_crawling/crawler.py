@@ -172,45 +172,56 @@ def collect_video_data(driver, video_id):
     product_info_list = []
 
     try:
-        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "ytd-merch-shelf-item-renderer"))) # 제품 정보가 담긴 요소가 페이지에 로드될 때까지 대기
-        product_elements = soup.select("ytd-merch-shelf-item-renderer") # 상품 영역(여러 개일 수 있음) 요소들을 모두 가져오기
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".product-item.style-scope.ytd-merch-shelf-item-renderer"))) # 제품 정보가 담긴 요소가 페이지에 로드될 때까지 대기
+        product_elements = soup.select(".product-item.style-scope.ytd-merch-shelf-item-renderer") # 상품 영역(여러 개일 수 있음) 요소들을 모두 가져오기
         
         """
         제품 이미지 링크, 제품명, 제품 가격, 제품 구매 링크
         """
-        for idx, product in enumerate(product_elements):
+        for product in product_elements:
             product_img_link = None
+
             try:
-                """이미지 링크부터 시도"""
-                img_shadow = product.select_one("yt-img-shadow")
-                if img_shadow:
-                    product_img = img_shadow.select_one("img#img")
+                product_img_link = product.find_element(By.CSS_SELECTOR, "#img").get_attribute("src")
+                product_name = product.find_element(By.CSS_SELECTOR, ".product-item-title").text.strip()
+                product_price = product.find_element(By.CSS_SELECTOR, ".product-item-price").text.replace("₩", "").strip()
+                link_raw = product.find_element(By.CSS_SELECTOR, ".product-item-description").text.strip()
+                product_link = link_raw if not link_raw.startswith("http") else link_raw
 
-                    if product_img:
-                        # src, data-src, srcset 속성 중 하나 추출
-                        product_img_link = product_img.get('src') or product_img.get('data-src') or product_img.get('srcset') or None
 
-                        if not product_img_link:
-                            style = img_shadow.get('style', '')
-                            match = re.search(r'url\(["\']?(.*?)["\']?\)', style)
-                            product_img_link = match.group(1) if match else None
+            except Exception as inner_e:
+                print("🔸 일부 제품 정보 추출 실패:", inner_e)
+            # try:
+            #     """이미지 링크부터 시도"""
+            #     img_shadow = product.select_one("yt-img-shadow")
+            #     if img_shadow:
+            #         product_img = img_shadow.select_one("img#img")
 
-                    else:
-                        print(f"⚠️ 제품 {idx} : img#img 태그 없음")
-                else:
-                    print(f"⚠️ 제품 {idx} : yt-img-shadow 태그 없음")
-            except Exception as e:
-                print(f"❌ 제품 {idx}: 이미지 추출 실패 - {e}")
+            #         if product_img:
+            #             # src, data-src, srcset 속성 중 하나 추출
+            #             product_img_link = product_img.get('src') or product_img.get('data-src') or product_img.get('srcset') or None
+
+            #             if not product_img_link:
+            #                 style = img_shadow.get('style', '')
+            #                 match = re.search(r'url\(["\']?(.*?)["\']?\)', style)
+            #                 product_img_link = match.group(1) if match else None
+
+            #         else:
+            #             print(f"⚠️ 제품 {idx} : img#img 태그 없음")
+            #     else:
+            #         print(f"⚠️ 제품 {idx} : yt-img-shadow 태그 없음")
+            # except Exception as e:
+            #     print(f"❌ 제품 {idx}: 이미지 추출 실패 - {e}")
             
-            # 디버깅
-            print(f"제품 {idx} 최종 이미지 링크: {product_img_link}")
+            # # 디버깅
+            # print(f"제품 {idx} 최종 이미지 링크: {product_img_link}")
 
-            """제품명, 제품 가격, 제품 구매 링크"""
-            try:
-                product_name = product.select_one(".product-item-title").text.strip()
-                product_price = product.select_one(".product-item-price").text.replace("₩", "").strip()
-                link_raw = product.select_one(".product-item-description").text.strip()
-                product_link = link_raw if link_raw.startswith("http") else f"http://{link_raw}"
+            # """제품명, 제품 가격, 제품 구매 링크"""
+            # try:
+            #     product_name = product.select_one(".product-item-title").text.strip()
+            #     product_price = product.select_one(".product-item-price").text.replace("₩", "").strip()
+            #     link_raw = product.select_one(".product-item-description").text.strip()
+            #     product_link = link_raw if link_raw.startswith("http") else f"http://{link_raw}"
 
                 # 조회수, 업로드일, 제품 개수 들고오기
                 youtube_view_count, youtube_upload_date, youtube_product_count = extract_video_info(info_texts)
