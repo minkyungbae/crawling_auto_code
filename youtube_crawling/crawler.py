@@ -179,20 +179,20 @@ def extract_products_from_json(driver) -> list:
     for i, item in enumerate(products):
         renderer = item.get("productListItemRenderer", {})
 
-        # 제품명
+        # ⬇️ 제품명
         product_name = renderer.get("title", {}).get("simpleText")
         if product_name:
             product_name = product_name.lstrip() # 맨 앞 공백만 제거
 
 
-        # 가격
+        # ⬇️ 가격
         price_info = renderer.get("price")
         price = price_info.get("simpleText") if isinstance(price_info, dict) else price_info
         if price:
             price = price.replace(",", "").replace("₩", "").strip()
 
 
-        # 판매처 찾기
+        # ⬇️ 판매처 찾기
         commands = renderer.get("onClickCommand", {}) \
             .get("commandExecutorCommand", {}) \
             .get("commands", [])
@@ -204,7 +204,7 @@ def extract_products_from_json(driver) -> list:
                 merchant_link = url
                 break
 
-        # 💡 HTML에서 판매처 링크를 보완 추출
+        # ⬇️ HTML에서 판매처 링크를 보완 추출
         if not merchant_link:
             descriptions = soup.select("div.product-item-description")
             if i < len(descriptions):
@@ -215,13 +215,13 @@ def extract_products_from_json(driver) -> list:
                         "https://" + merchant_text if not merchant_text.startswith("http") else merchant_text
                     )
         
-
+        # ⬇️ 제품 사진 찾기
         thumbnails = renderer.get("thumbnail", {}).get("thumbnails", [])
 
-        # 128px 썸네일이 없을 경우 첫 번째 이미지 fallback
+        # 256px 제품 사진이 없을 경우 첫 번째 이미지 fallback
         image_url = None
         for thumb in thumbnails:
-            if thumb.get("width") == 128:
+            if thumb.get("width") == 256:
                 image_url = thumb.get("url")
                 break
         if not image_url and thumbnails:
@@ -237,7 +237,7 @@ def extract_products_from_json(driver) -> list:
 
     return extracted
 
-#--------------------------------------- product 추출 -------------------------------------
+#--------------------------------------- ⬇️ product 추출 -------------------------------------
 def extract_products_and_metadata(driver, video_id: str, title: str, channel_name: str, subscriber_count: str, description: str) -> pd.DataFrame:
     """
     영상 페이지 전체 HTML을 파싱하여 제품 정보 및 메타데이터 추출 후 DataFrame 반환
@@ -270,7 +270,7 @@ def extract_products_and_metadata(driver, video_id: str, title: str, channel_nam
         "description": description,
     }
 
-    #------------------------------------------ 디버깅 --------------------------------------------------
+    #------------------------------------------ ⬇️ 디버깅 --------------------------------------------------
     # # img 태그 기반으로 모든 이미지 추출
     # with open("youtube_product_html.txt", "r", encoding="utf-8") as f:
     #     soup = BeautifulSoup(f, "html.parser")
@@ -314,7 +314,7 @@ def extract_products_and_metadata(driver, video_id: str, title: str, channel_nam
     return pd.DataFrame(product_info_list)
 
 
-# ---------------------- 메인 진입 함수 ----------------------
+# ----------------------------------------------- ⬇️ 메인 진입 함수 -----------------------------------------------
 
 def collect_video_data(driver, video_id: str, index: int = None, total: int = None) -> pd.DataFrame:
     """
@@ -335,7 +335,7 @@ def collect_video_data(driver, video_id: str, index: int = None, total: int = No
     return df
 
 
-# ---------------------- DB 저장 함수 ----------------------
+# -------------------------------------------- ⬇️ DB 저장 함수 ----------------------------------------
 
 def save_youtube_data_to_db(dataframe: pd.DataFrame) -> int:
     """
