@@ -172,10 +172,8 @@ def collect_video_data(driver, video_id):
     product_info_list = []
 
     try:
-        # 제품 정보가 담긴 요소가 페이지에 로드될 때까지 대기
-        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "ytd-merch-shelf-item-renderer")))
-        # 상품 영역(여러 개일 수 있음) 요소들을 모두 가져오기
-        product_elements = driver.find_elements(By.CSS_SELECTOR, "ytd-merch-shelf-item-renderer")
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "ytd-merch-shelf-item-renderer"))) # 제품 정보가 담긴 요소가 페이지에 로드될 때까지 대기
+        product_elements = soup.select("ytd-merch-shelf-item-renderer") # 상품 영역(여러 개일 수 있음) 요소들을 모두 가져오기
         
         """
         제품 이미지 링크, 제품명, 제품 가격, 제품 구매 링크
@@ -184,37 +182,31 @@ def collect_video_data(driver, video_id):
             product_img_link = None
             try:
                 """이미지 링크부터 시도"""
-                try:
-                    img_shadow = product.find_element(By.CSS_SELECTOR, "yt-img-shadow")
-                    print(f"🔍 제품 {idx} yt-img-shadow outerHTML:", img_shadow.get_attribute("outerHTML")) # 디버깅
+                img_shadow = product.select_one("yt-img-shadow")
+                if img_shadow:
+                    product_img = img_shadow.select_one("img#img")
 
-                    # yt-img-shadow 내부 img 태그 찾기
-                    product_img = img_shadow.find_element(By.CSS_SELECTOR, "img#img")
+                    if product_img:
+                        # src, data-src, srcset 속성 중 하나 추출
+                        product_img_link = product_img.get('src') or product_img.get('data-src') or product_img.get('srcset') or None
 
-                    # src 속성 추출
-                    product_img_link = product_img.get_attribute("src") or \
-                                        product_img.get_attribute("data-src") or \
-                                        product_img.get_attribute("srcset") or None
-                    if product_img_link:
-                        print(f"✅ 제품 {idx} 이미지 링크: {product_img_link}")
+                        if not product_img_link:
+                            style = img_shadow.get('style', '')
+                            match = re.search(r'url\(["\']?(.*?)["\']?\)', style)
+                            product_img_link = match.group(1) if match else None
+
                     else:
-                        # 이미지가 없으면 yt-img-shadow style 속성에서 배경 이미지 URL 시도
-                        style = img_shadow.get_attribute("style")
-                        match = re.search(r'url\(["\']?(.*?)["\']?\)', style)
-                        product_img_link = match.group(1) if match else None
+                        print(f"⚠️ 제품 {idx} : img#img 태그 없음")
+                else:
+                    print(f"⚠️ 제품 {idx} : yt-img-shadow 태그 없음")
+            except Exception as e:
+                print(f"❌ 제품 {idx}: 이미지 추출 실패 - {e}")
+            
+            # 디버깅
+            print(f"제품 {idx} 최종 이미지 링크: {product_img_link}")
 
-                        if product_img_link:
-                            print(f"✅ 제품 {idx} 이미지 링크(스타일에서): {product_img_link}")
-                        else:
-                            print(f"⚠️ 제품 {idx} 이미지 링크: 이미지 링크 없음")
-                            print(f"🔍 제품 {idx} img.outerHTML:", product_img.get_attribute("outerHTML"))
-
-                except Exception as e:
-                    print(f"❌ 제품 {idx}: 이미지 추출 실패 - {e}")
-
-                # 디버깅
-                print(f"제품 {idx} 최종 이미지 링크: {product_img_link}")
-
+            """제품명, 제품 가격, 제품 구매 링크"""
+            try:
                 product_name = product.find_element(By.CSS_SELECTOR, ".product-item-title").text.strip()
                 product_price = product.find_element(By.CSS_SELECTOR, ".product-item-price").text.replace("₩", "").strip()
                 link_raw = product.find_element(By.CSS_SELECTOR, ".product-item-description").text.strip()
@@ -222,7 +214,7 @@ def collect_video_data(driver, video_id):
 
                 # 조회수, 업로드일, 제품 개수 들고오기
                 youtube_view_count, youtube_upload_date, youtube_product_count = extract_video_info(info_texts)
-    
+
                 # 추출일 날짜 문자열(YYYYMMDD)
                 today_str_four = datetime.today().strftime('%Y%m%d')
 
@@ -250,10 +242,12 @@ def collect_video_data(driver, video_id):
             except Exception as inner_e:
                 print("🔸 일부 제품 정보 추출 실패:", inner_e)
 
-            else:
+        if not product_info_list:
                 """
                 제품이 없을 경우에도 영상 정보는 저장
                 """
+                youtube_view_count, youtube_upload_date, youtube_product_count = extract_video_info(info_texts)
+                today_str_four = datetime.today().strftime('%Y%m%d')
                 product_info_list.append({
                     "video_id": video_id,
                     "title": title,
@@ -273,6 +267,7 @@ def collect_video_data(driver, video_id):
             
     except Exception as e:
         print("제품 정보 추출 실패:", e)
+        
     return pd.DataFrame(product_info_list)
 
 
