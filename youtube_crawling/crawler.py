@@ -172,49 +172,30 @@ def collect_video_data(driver, video_id):
     product_info_list = []
 
     try:
-        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "ytd-merch-shelf-item-renderer"))) # 제품 정보가 담긴 요소가 페이지에 로드될 때까지 대기
-        product_elements = driver.find_elements(By.CSS_SELECTOR, "ytd-merch-shelf-item-renderer") # 상품 영역(여러 개일 수 있음) 요소들을 모두 가져오기
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "product-item.style-scope.ytd-merch-shelf-item-renderer"))) # 제품 정보가 담긴 요소가 페이지에 로드될 때까지 대기
+        product_elements = soup.select(".product-item.style-scope.ytd-merch-shelf-item-renderer") # 상품 영역(여러 개일 수 있음) 요소들을 모두 가져오기
         
         """
         제품 이미지 링크, 제품명, 제품 가격, 제품 구매 링크
         """
         for product in product_elements:
-            product_img_link = None
-
             try:
-                product_img_link = product.find_element(By.CSS_SELECTOR, "#img").get_attribute("src")
-                product_name = product.find_element(By.CSS_SELECTOR, ".product-item-title").text.strip()
-                product_price = product.find_element(By.CSS_SELECTOR, ".product-item-price").text.replace("₩", "").strip()
-                link_raw = product.find_element(By.CSS_SELECTOR, ".product-item-description").text.strip()
-                product_link = link_raw if not link_raw.startswith("http") else link_raw
+                # 상품명
+                title_tag = product.select_one(".product-item-title")
+                product_name = title_tag.get_text(strip=True) if title_tag else None
+
+                # 가격
+                price_tag = product.select_one(".product-item-price")
+                price = price_tag.get_text(strip=True) if price_tag else None
+
+                # 판매처
+                merchant_tag = product.select_one(".product-item-merchant-text")
+                merchant = merchant_tag.get_text(strip=True) if merchant_tag else None
 
 
-            except Exception as inner_e:
-                print("🔸 일부 제품 정보 추출 실패:", inner_e)
-            # try:
-            #     """이미지 링크부터 시도"""
-            #     img_shadow = product.select_one("yt-img-shadow")
-            #     if img_shadow:
-            #         product_img = img_shadow.select_one("img#img")
-
-            #         if product_img:
-            #             # src, data-src, srcset 속성 중 하나 추출
-            #             product_img_link = product_img.get('src') or product_img.get('data-src') or product_img.get('srcset') or None
-
-            #             if not product_img_link:
-            #                 style = img_shadow.get('style', '')
-            #                 match = re.search(r'url\(["\']?(.*?)["\']?\)', style)
-            #                 product_img_link = match.group(1) if match else None
-
-            #         else:
-            #             print(f"⚠️ 제품 {idx} : img#img 태그 없음")
-            #     else:
-            #         print(f"⚠️ 제품 {idx} : yt-img-shadow 태그 없음")
-            # except Exception as e:
-            #     print(f"❌ 제품 {idx}: 이미지 추출 실패 - {e}")
-            
-            # # 디버깅
-            # print(f"제품 {idx} 최종 이미지 링크: {product_img_link}")
+                # 이미지 URL
+                image_tag = product.select_one("img")
+                image_url = image_tag['src'] if image_tag and 'src' in image_tag.attrs else None
 
             # """제품명, 제품 가격, 제품 구매 링크"""
             # try:
@@ -229,29 +210,30 @@ def collect_video_data(driver, video_id):
                 # 추출일 날짜 문자열(YYYYMMDD)
                 today_str_four = datetime.today().strftime('%Y%m%d')
 
-                """
-                의미있는 값일 시, 저장
-                """
-                if any([product_img_link, product_name, product_price, product_link]):
-                    product_info_list.append({
-                        "video_id": video_id,
-                        "title": title,
-                        "channel_name": channel_name,
-                        "subscriber_count": subscriber_count,
-                        "view_count": youtube_view_count,
-                        "upload_date": youtube_upload_date,
-                        "extracted_date": today_str_four,
-                        "video_url": base_url,
-                        "product_count": youtube_product_count,
-                        "description": description,
-                        'product_image_link': product_img_link,
-                        "product_name": product_name,
-                        "product_price": product_price,
-                        "product_link": product_link,
-                    })
-
             except Exception as inner_e:
                 print("🔸 일부 제품 정보 추출 실패:", inner_e)
+
+            """
+            의미있는 값일 시, 저장
+            """
+            if any([image_url, product_name, price, merchant]):
+                product_info_list.append({
+                    "video_id": video_id,
+                    "title": title,
+                    "channel_name": channel_name,
+                    "subscriber_count": subscriber_count,
+                    "view_count": youtube_view_count,
+                    "upload_date": youtube_upload_date,
+                    "extracted_date": today_str_four,
+                    "video_url": base_url,
+                    "product_count": youtube_product_count,
+                    "description": description,
+                    'product_image_link': image_url,
+                    "product_name": product_name,
+                    "product_price": price,
+                    "product_link": merchant,
+                })
+
 
         if not product_info_list:
                 """
