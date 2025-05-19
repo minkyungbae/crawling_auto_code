@@ -177,6 +177,23 @@ def collect_video_data(driver, video_id):
         # 상품 영역(여러 개일 수 있음) 요소들을 모두 가져오기
         product_elements = driver.find_elements(By.CSS_SELECTOR, "ytd-merch-shelf-item-renderer")
         
+
+        # ⚠️ 디버깅
+        for idx, product in enumerate(product_elements):
+            print(f"\n\n=== PRODUCT {idx} ===")
+            print(product.get_attribute("outerHTML"))  # 구조를 직접 확인
+            try:
+                product_img = product.find_element(By.CSS_SELECTOR, "img")
+                product_img_link = (
+                    product_img.get_attribute("src")
+                    or product_img.get_attribute("data-src")
+                    or product_img.get_attribute("srcset")
+                )
+                print(f"이미지 링크: {product_img_link}")
+            except NoSuchElementException:
+                print("이미지 태그를 찾을 수 없습니다.")
+
+
         # 최소 1개 이상 제품이 존재할 경우
         for product in product_elements:
             try:
