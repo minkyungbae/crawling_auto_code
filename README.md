@@ -22,11 +22,13 @@
 git clone https://github.com/minkyungbae/crawling_auto_code.git
 ```
 **2. 가상환경 생성 및 활성화**
+<br>
 **2.1. 가상환경 생성**
 ```
 python -m venv env
 ```
 **2.2. 가상환경 실행**
+<br>
 **2.2.1. MacOS**
 ```
 source env/bin/activate
