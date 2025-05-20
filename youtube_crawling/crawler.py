@@ -12,7 +12,7 @@ import json
 import re
 
 
-# ----------------------------- 파싱 함수(업로드일 날짜 표기, 조회수, 제품 수) -----------------------------
+# ----------------------------- ⬇️ 파싱 함수(업로드일 날짜 표기, 조회수, 제품 수) -----------------------------
 
 def parse_subscriber_count(text: str) -> str:
     """구독자 수 텍스트를 숫자 형태로 변환 (예: 1.2만명 -> 12000)"""
@@ -30,9 +30,9 @@ def parse_subscriber_count(text: str) -> str:
 
     return f"{int(number):,}"
 
-
+# ---------------------- ⬇️ 업로드 날짜 문자열을 'YYYYMMDD' 형식으로 변환 ----------------------
 def parse_upload_date(text: str) -> Union[str, None]:
-    """업로드 날짜 문자열을 'YYYYMMDD' 형식으로 변환"""
+
     if m := re.search(r'(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.', text):
         year, month, day = m.groups()
         return f"{year}{int(month):02d}{int(day):02d}"
@@ -41,25 +41,24 @@ def parse_upload_date(text: str) -> Union[str, None]:
         return f"{year}{int(month):02d}{int(day):02d}"
     return None
 
-
+# ---------------------- ⬇️ 조회수 텍스트에서 숫자만 추출 (예: 조회수 1,234회 -> 1234) ----------------------
 def parse_view_count(text: str) -> Union[int, None]:
-    """조회수 텍스트에서 숫자만 추출 (예: 조회수 1,234회 -> 1234)"""
+
     if match := re.search(r'조회수\s*([\d,]+)회', text):
         return int(match.group(1).replace(',', ''))
     return None
 
 
+# ---------------------- ⬇️ 제품 개수 텍스트에서 숫자 추출 (예: 5개 제품) ----------------------
 def parse_product_count(text: str) -> Union[int, None]:
-    """제품 개수 텍스트에서 숫자 추출 (예: 5개 제품)"""
+
     if match := re.search(r'(\d+)\s*개\s*제품', text):
         return int(match.group(1))
     return None
 
-
+# ---------------------- ⬇️ 조회수, 업로드일, 제품 개수 파싱 ----------------------
 def extract_video_info(info_texts: List[str]) -> Tuple[Union[int, None], str, Union[int, None]]:
-    """
-    영상 정보 리스트에서 조회수, 업로드일, 제품 개수 파싱
-    """
+
     view_count = None
     upload_date = "업로드 날짜 정보 못 찾음"
     product_count = None
@@ -75,10 +74,10 @@ def extract_video_info(info_texts: List[str]) -> Tuple[Union[int, None], str, Un
     return view_count, upload_date, product_count
 
 
-# ---------------------- 영상 기본 정보: 제목, 채널명, 구독자 수 ----------------------
+# ---------------------- ⬇️ 영상 기본 정보: 제목, 채널명, 구독자 수 ----------------------
 
 def extract_basic_video_info(driver) -> Tuple[str, str, str]:
-    """영상 기본 정보: 제목, 채널명, 구독자 수 수집"""
+
     try:
         title = WebDriverWait(driver, 10).until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.style-scope.ytd-watch-metadata yt-formatted-string"))
@@ -104,11 +103,9 @@ def extract_basic_video_info(driver) -> Tuple[str, str, str]:
     return title, channel_name, subscriber_count
 
 
-# ---------------------- 더보기 클릭 및 더보기란 텍스트 추출 ----------------------
+# ---------------------- ⬇️ 더보기 클릭 및 더보기란 텍스트 추출 ----------------------
 def click_show_more_and_get_description(driver) -> str:
-    """
-    영상 설명란 '더보기' 클릭 후 텍스트 추출
-    """
+
     try:
         body = driver.find_element(By.TAG_NAME, 'body')
         for _ in range(3):  # 스크롤을 내려서 '더보기' 버튼 나오게 유도
@@ -176,6 +173,7 @@ def extract_products_from_json(driver) -> list:
         return []
 
     extracted = []
+
     for i, item in enumerate(products):
         renderer = item.get("productListItemRenderer", {})
 
@@ -245,14 +243,14 @@ def extract_products_and_metadata(driver, video_id: str, title: str, channel_nam
     soup = BeautifulSoup(driver.page_source, 'html.parser')
     info_texts = [span.get_text(strip=True) for span in soup.select("span.style-scope.yt-formatted-string.bold") if span.get_text(strip=True)]
     
-    # ----------------- 디버깅 확인하기 ------------------------------------
+    # ----------------------------디버깅 확인하기 ------------------------------------
     # with open("youtube_product_html.txt", "w", encoding="utf-8") as f:
     #     f.write(soup.prettify())
     # print("HTML 구조가 'youtube_product_html.txt' 파일에 저장되었습니다.")
 
     view_count, upload_date, product_count = extract_video_info(info_texts)
-    today_str = datetime.today().strftime('%Y%m%d')
-    base_url = f"https://www.youtube.com/watch?v={video_id}"
+    today_str = datetime.today().strftime('%Y%m%d') # 오늘 날짜(YYYYmmdd)
+    base_url = f"https://www.youtube.com/watch?v={video_id}" # 기본 유튜브 영상 틀
 
     # 페이지 렌더링 대기
     time.sleep(5)
@@ -269,32 +267,6 @@ def extract_products_and_metadata(driver, video_id: str, title: str, channel_nam
         "product_count": product_count,
         "description": description,
     }
-
-    #------------------------------------------ ⬇️ 디버깅 --------------------------------------------------
-    # # img 태그 기반으로 모든 이미지 추출
-    # with open("youtube_product_html.txt", "r", encoding="utf-8") as f:
-    #     soup = BeautifulSoup(f, "html.parser")
-
-    # # 이미지 태그 모두 탐색
-    # img_tags = soup.find_all("img")
-    # print(f"전체 img 태그 수: {len(img_tags)}")
-
-    # for i, img in enumerate(img_tags):
-    #     if img.has_attr("src"):
-    #         print(f"{i+1}. 이미지 URL: {img['src']}")
-    #     elif img.has_attr("style"):
-    #         match = re.search(r'background-image:\s*url\("([^"]+)"\)', img["style"])
-    #         if match:
-    #             print(f"{i+1}. 이미지 style에서 URL: {match.group(1)}")
-
-    # # 제품 관련 키워드가 있는 요소 추출
-    # candidates = soup.find_all(True, class_=re.compile(r"(product|merch|shop)", re.IGNORECASE))
-    # print(f"관련된 요소 수: {len(candidates)}")
-    # for i, tag in enumerate(candidates[:10]):
-    #     print(f"{i+1}. 태그 이름: {tag.name}, 클래스: {tag.get('class')}")
-    #     print(tag.prettify()[:500])
-
-    #----------------------------------------- 디버깅 끝 -------------------------------------------------
     
     product_info_list = []
 
@@ -335,12 +307,10 @@ def collect_video_data(driver, video_id: str, index: int = None, total: int = No
     return df
 
 
-# -------------------------------------------- ⬇️ DB 저장 함수 ----------------------------------------
+# -------------------------------------------- ⬇️ DB(sqlite) 저장 함수 ----------------------------------------
 
 def save_youtube_data_to_db(dataframe: pd.DataFrame) -> int:
-    """
-    수집한 DataFrame 데이터를 Django DB에 저장
-    """
+
     if dataframe.empty:
         return 0
 
