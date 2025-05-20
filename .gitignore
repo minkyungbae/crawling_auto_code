@@ -1,4 +1,6 @@
 config.py
+debug_youtube_merch2.html
+youtube_product_html.txt
 
 # Created by https://www.toptal.com/developers/gitignore/api/django
 # Edit at https://www.toptal.com/developers/gitignore?templates=django
