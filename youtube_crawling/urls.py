@@ -1,17 +1,10 @@
-from django.urls import path, include
+from django.urls import path
 from youtube_crawling.views.longform_views import (
     YoutubeLongFormCrawlAPIView,
-    YouTubeVideoViewSet,
-    YouTubeProductViewSet
+    YouTubeVideoOneAPIView,
     )
 
-from rest_framework.routers import DefaultRouter
-
-router = DefaultRouter()
-router.register(r'youtube-videos', YouTubeVideoViewSet)
-router.register(r'youtube-products', YouTubeProductViewSet)
-
 urlpatterns = [
-    path('', include(router.urls)), # ViewSet API (GET, POST, PUT, DELETE 등 자동 라우팅)
-    path('longform/', YoutubeLongFormCrawlAPIView.as_view()), # POST /longform/ => 크롤링
+    path('longform/', YoutubeLongFormCrawlAPIView.as_view()), # 여러 개 영상 크롤링 (C,R,PUT,D)
+    path('longform/<str:video_id>/', YouTubeVideoOneAPIView.as_view()), # 특정 영상 한 개 (R,D,PATCH)
 ]
