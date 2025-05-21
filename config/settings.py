@@ -11,7 +11,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 from pathlib import Path
-from config.config import DJANGO_SECRET_KEY
+from config.keys import DJANGO_SECRET_KEY
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -136,6 +136,10 @@ STATIC_URL = '/static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Celery 설정
-CELERY_BROKER_URL = 'redis://localhost:6379/0'  # Redis를 브로커로 사용할 경우
+CELERY_BROKER_URL = 'redis://localhost:6379/0'  # Redis
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0' # 결과 반환
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
+
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers.DatabaseScheduler'
+
