@@ -25,3 +25,5 @@ def setup_periodic_tasks():
             logger.info(f"⚠️ 주기 작업 '{task_name}' 이미 존재함 (건너뜀)")
     except Exception as e:
         logger.error(f"❌ 주기 작업 등록 중 오류 발생: {e}")
+
+setup_periodic_tasks()
