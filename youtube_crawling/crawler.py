@@ -5,11 +5,20 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 from datetime import datetime
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Dict
 import pandas as pd
+import logging
 import time
 import json
 import re
+
+logger = logging.getLogger(__name__)  # 모듈 전용 로거 생성
+
+def crawl_youtube():
+    logger.info("유튜브 크롤링을 시작합니다.")
+    logger.warning("테스트 경고 메시지입니다.")
+    logger.info("유튜브 크롤링을 완료했습니다.")
+
 
 
 # ----------------------------- ⬇️ 파싱 함수(업로드일 날짜 표기, 조회수, 제품 수) -----------------------------
@@ -122,8 +131,8 @@ def click_show_more_and_get_description(driver) -> str:
         driver.execute_script("arguments[0].click();", expand_button)
         WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "description-inline-expander")))
 
-    except Exception:
-        pass
+    except Exception as e:
+        logging.error(f"❌ 더보기 버튼 클릭 실패: {e}")
 
     try:
         description = driver.find_element(By.ID, "description-inline-expander").text
@@ -161,13 +170,13 @@ def extract_products_from_json(driver) -> list:
 
     products_json_text = extract_json_block(html_text, "productsData")
     if not products_json_text:
-        print("❌ productsData 블록을 찾을 수 없음")
+        logging.warning("⚠️ productsData 블록 없음: 이 영상에는 제품 정보가 포함되지 않았을 수 있습니다.")
         return []
 
     try:
         products = json.loads(products_json_text)
     except json.JSONDecodeError as e:
-        print(f"❌ JSON 파싱 오류: {e}")
+        logging.error(f"❌ JSON 파싱 오류: {e}")
         with open("error_products.json", "w", encoding="utf-8") as f:
             f.write(products_json_text)
         return []
@@ -225,7 +234,7 @@ def extract_products_from_json(driver) -> list:
         if not image_url and thumbnails:
             image_url = thumbnails[0].get("url")
 
-        print(f"✅ 상품 {i+1}: {product_name}, 가격: {price}, 판매처: {merchant_link}, 이미지: {image_url}")
+        logging.info(f"✅ 상품 {i+1}: {product_name}, 가격: {price}, 판매처: {merchant_link}, 이미지: {image_url}")
         extracted.append({
             "product_name": product_name,
             "product_price": price,
@@ -236,7 +245,7 @@ def extract_products_from_json(driver) -> list:
     return extracted
 
 #--------------------------------------- ⬇️ product 추출 -------------------------------------
-def extract_products_and_metadata(driver, video_id: str, title: str, channel_name: str, subscriber_count: str, description: str) -> pd.DataFrame:
+def extract_products_and_metadata(driver, video_id: str, title: str, channel_name: str, subscriber_count: str, description: str) -> List[Dict]:
     """
     영상 페이지 전체 HTML을 파싱하여 제품 정보 및 메타데이터 추출 후 DataFrame 반환
     """
@@ -247,6 +256,7 @@ def extract_products_and_metadata(driver, video_id: str, title: str, channel_nam
     # with open("youtube_product_html.txt", "w", encoding="utf-8") as f:
     #     f.write(soup.prettify())
     # print("HTML 구조가 'youtube_product_html.txt' 파일에 저장되었습니다.")
+    # ----------------------------디버깅 확인하기 끝 ------------------------------------
 
     view_count, upload_date, product_count = extract_video_info(info_texts)
     today_str = datetime.today().strftime('%Y%m%d') # 오늘 날짜(YYYYmmdd)
@@ -255,6 +265,7 @@ def extract_products_and_metadata(driver, video_id: str, title: str, channel_nam
     # 페이지 렌더링 대기
     time.sleep(5)
 
+    product_count = product_count or 0
     product_data = {
         "video_id": video_id,
         "title": title,
@@ -267,23 +278,35 @@ def extract_products_and_metadata(driver, video_id: str, title: str, channel_nam
         "product_count": product_count,
         "description": description,
     }
+    try:
+        product_info_list = []
+        extracted_products = extract_products_from_json(driver)
+
+        for product in extracted_products:
+            product_info_list.append({**product_data, **product})
+
+        if not product_info_list:
+            product_info_list.append({
+                **product_data,
+                "product_image_link": None,
+                "product_name": "해당 영상에 포함된 제품 없음",
+                "product_price": None,
+                "product_link": None
+                })
+        return pd.DataFrame(product_info_list)
     
-    product_info_list = []
+    except Exception as e:
+        logging.error(f"[❌ 예외 발생] {video_id} 처리 중: {e}")
 
-    extracted_products = extract_products_from_json(driver)
-
-    for product in extracted_products:
-        product_info_list.append({**product_data, **product})
-
-    if not product_info_list:
-        product_info_list.append({**product_data,
+        return [{
+            **product_data,
             "product_image_link": None,
-            "product_name": None,
+            "product_name": "해당 영상에 포함된 제품 없음",
             "product_price": None,
-            "product_link": None})
-        
-
-    return pd.DataFrame(product_info_list)
+            "product_link": None
+        }]
+    
+    # return pd.DataFrame(product_info_list)
 
 
 # ----------------------------------------------- ⬇️ 메인 진입 함수 -----------------------------------------------
@@ -296,10 +319,10 @@ def collect_video_data(driver, video_id: str, index: int = None, total: int = No
     driver.get(base_url)
 
     if index is not None and total is not None:
-        print(f"\n📹 ({index}/{total}) 크롤링 중: {video_id}")
+        logging.info(f"\n📹 ({index}/{total}) 크롤링 중: {video_id}")
 
     title, channel_name, subscriber_count = extract_basic_video_info(driver)
-    print(f"  - 제목: {title} | 채널: {channel_name} | 구독자: {subscriber_count}")
+    logging.info(f"  - 제목: {title} | 채널: {channel_name} | 구독자: {subscriber_count}")
 
     description = click_show_more_and_get_description(driver)
     df = extract_products_and_metadata(driver, video_id, title, channel_name, subscriber_count, description)
@@ -317,7 +340,7 @@ def save_youtube_data_to_db(dataframe: pd.DataFrame) -> int:
     video_id = dataframe.iloc[0]['video_id']
 
     if YouTubeVideo.objects.filter(video_id=video_id).exists():
-        print(f"⚠️ 이미 존재하는 영상 id입니다: {video_id}")
+        logging.warning(f"⚠️ 이미 존재하는 영상 id입니다: {video_id}")
         return 0
 
     row = dataframe.iloc[0]
@@ -334,15 +357,77 @@ def save_youtube_data_to_db(dataframe: pd.DataFrame) -> int:
         description=row['description']
     )
 
+    # 빈 값일 때
     for _, row in dataframe.iterrows():
         product_name = row.get('product_name')
-        if product_name and pd.notna(product_name):
-            YouTubeProduct.objects.create(
-                video=video,
-                product_image_link=row.get('product_image_link'),
-                product_name=product_name,
-                product_price=row.get('product_price'),
-                product_link=row.get('product_link'),
-            )
-    print(f"✅ 영상 및 제품 정보 저장 완료: {video_id}")
+
+        # 빈 값 처리
+        if not product_name or pd.isna(product_name) or product_name.strip() == "":
+            product_name = "영상에 포함된 제품 정보 없음"
+        
+        product_image_link = row.get('product_image_link')
+        if not product_image_link or pd.isna(product_image_link) or product_image_link.strip() == "":
+            product_image_link = "영상에 포함된 제품 정보 없음"
+        
+        product_price = row.get('product_price')
+        if not product_price or pd.isna(product_price) or product_price.strip() == "":
+            product_price = "영상에 포함된 제품 정보 없음"
+        
+        product_link = row.get('product_link')
+        if not product_link or pd.isna(product_link) or product_link.strip() == "":
+            product_link = None
+            
+        YouTubeProduct.objects.create(
+            video=video,
+            product_image_link=row.get('product_image_link'),
+            product_name=product_name,
+            product_price=row.get('product_price'),
+            product_link=row.get('product_link'),
+        )
+    logging.info(f"✅ 영상 및 제품 정보 저장 완료: {video_id}")
     return 1
+
+# ------------------------------------- ⬇️ 크롤링된 유튜브 영상을 조회하고 수정하는 코드 ------------------------------
+def update_youtube_data_to_db(dataframe: pd.DataFrame) -> int:
+    if dataframe.empty:
+        return 0
+
+    video_id = dataframe.iloc[0]['video_id']
+    
+    try:
+        video = YouTubeVideo.objects.get(video_id=video_id)
+        row = dataframe.iloc[0]
+
+        # 기존 영상 정보 업데이트
+        video.extracted_date = row['extracted_date']
+        video.upload_date = row['upload_date']
+        video.channel_name = row['channel_name']
+        video.subscriber_count = row['subscriber_count']
+        video.video_url = row['video_url']
+        video.title = row['title']
+        video.view_count = row['view_count']
+        video.product_count = row['product_count']
+        video.description = row['description']
+        video.save()
+
+        # 기존 제품 정보 삭제 후 새로 저장
+        video.products.all().delete()
+
+        # pd.DataFrame == dataframe
+        for _, row in dataframe.iterrows():
+            product_name = row.get('product_name')
+            if product_name and pd.notna(product_name):
+                YouTubeProduct.objects.create(
+                    video=video,
+                    product_image_link=row.get('product_image_link'),
+                    product_name=product_name,
+                    product_price=row.get('product_price'),
+                    product_link=row.get('product_link'),
+                )
+        logging.info(f"🔁 영상 정보 업데이트 완료: {video_id}")
+        return 1
+
+    except YouTubeVideo.DoesNotExist:
+        logging.error(f"❌ 해당 video_id에 대한 영상이 없습니다: {video_id}")
+        return 0
+
