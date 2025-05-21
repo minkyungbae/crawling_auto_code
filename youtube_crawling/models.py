@@ -9,7 +9,7 @@ class YouTubeVideo(models.Model):
     title = models.CharField(max_length=255)
     view_count = models.CharField(max_length=255)
     video_url = models.URLField(unique=True)  # 중복 방지
-    product_count = models.CharField(max_length=255)
+    product_count = models.CharField(max_length=255, null=True, blank=True)
     description = models.TextField()
 
     def __str__(self):
@@ -19,8 +19,8 @@ class YouTubeVideo(models.Model):
 class YouTubeProduct(models.Model):
     video = models.ForeignKey(YouTubeVideo, related_name='products', on_delete=models.CASCADE)
     product_image_link = models.URLField(null=True, blank=True)
-    product_name = models.CharField(max_length=255)
-    product_price = models.CharField(max_length=100)
+    product_name = models.CharField(max_length=255, null=True, blank=True)
+    product_price = models.CharField(max_length=100, null=True, blank=True)
     product_link = models.URLField(null=True, blank=True)
 
     def __str__(self):
