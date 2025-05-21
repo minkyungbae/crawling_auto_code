@@ -53,21 +53,26 @@ python manage.py runserver
 # 폴더 구조
 ```
 crawling_auto_code
-├─ config              # 프로젝트 설정 폴더
-│  ├─ __init__.py      # celery 등록 파일
-│  └─ celery.py        # celery 설정 파일
+├─ README.md
+├─ config               # 프로젝트 설정 폴더
+│  ├─ __init__.py       # celery 등록 파일
+│  ├─ celery.py         # celery 설정 파일
+│  ├─ settings.py
+│  └─ urls.py
+│  
 ├─ manage.py
 ├─ requirements.txt     # 패키지
-├─ youtube_crawling     # 주된 기능 폴더
-│  ├─ models.py
-│  ├─ serializers       # serializer 관리 폴더
-│  │  ├─ __init__.py
-│  │  └─ video_ids_serializers.py
-│  ├─ tests.py
-│  ├─ tasks.py          # 자동화할 크롤링 코드 파일
-│  ├─ crawler.py        # 주요 크롤링 기능 코드 파일
-│  ├─ urls.py
-│  └─views             # view 관리 폴더
-      └─ longform_views.py  # 크콜링 작동 옵션 설정한 코드 파일
-
+│
+└─ youtube_crawling     # 주된 기능 폴더
+   ├─ command.py        # logging 설정한 파일
+   ├─ crawler.py        # 주요 크롤링 기능 코드 파일
+   ├─ migrations/
+   ├─ models.py
+   ├─ serializers       # serializer 관리 폴더
+   │  ├─ __init__.py
+   │  └─ video_ids_serializers.py  # YouTubeVideo, YouTubeProduct
+   ├─ tasks.py          # 자동화할 크롤링 코드 파일
+   ├─ urls.py
+   └─ views             # view 관리 폴더
+      └─ longform_views.py         # 크콜링 작동 옵션 설정한 코드 파일
 ```
