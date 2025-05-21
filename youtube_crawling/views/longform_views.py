@@ -13,6 +13,41 @@ from ..models import YouTubeVideo, YouTubeProduct
 from youtube_crawling.serializers.video_ids_serializers import YouTubeVideoSerializer, ProductSerializer
 from youtube_crawling.crawler import collect_video_data, save_youtube_data_to_db, update_youtube_data_to_db
 
+from youtube_crawling.tasks import crawl_channel_videos
+
+# ------------------------------------- ⬇️ 크롤링 자동화 딸깍 클래스 -------------------------------
+
+class ChannelCrawlTriggerView(APIView):
+    @swagger_auto_schema(
+        operation_summary="자동 크롤링할 유튜브 URL 목력 입력",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'channel_url': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Items(type=openapi.TYPE_STRING),
+                    description='자동 크롤링할 유튜브 채널 URL 목록을 입력해주세요.',
+                ),
+            },
+            required=['channel_url'],
+            example={
+                'channel_url': ["", ""]
+            }
+        ),
+        responses={202: '크롤링이 시작되었습니다.'}
+    )
+    def post(self, request):
+        channel_urls = request.data.get("channel_url")
+        if not channel_urls or not isinstance(channel_urls, list):
+            return Response({"error": "channel_url은 리스트여야 합니다."}, status=400)
+
+        for url in channel_urls:
+            crawl_channel_videos.delay(url)
+
+        return Response({"message": f"{len(channel_urls)}개의 크롤링이 시작되었습니다."}, status=202)
+
+
+# ------------------------------------- ⬇️ API CRUD 클래스 (전체 작업)-------------------------------
 class YoutubeLongFormCrawlAPIView(APIView):
 
     @swagger_auto_schema(
