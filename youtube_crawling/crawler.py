@@ -630,101 +630,84 @@ def save_to_excel(df: pd.DataFrame, file_path: str):
         logger.error(f"❌ 엑셀 저장 실패: {e}", exc_info=True)
 
 # ------------------------------------- ⬇️ DB에 저장하는 함수 ------------------------------
-def save_to_db(data: dict):
-    from django.db import transaction
-
-    if data.empty:
+def save_to_db(data: pd.DataFrame):
+    """DataFrame을 DB에 저장하는 함수"""
+    if data is None or data.empty:
         logger.warning("⚠️ 저장할 데이터가 없습니다.")
-        return
+        return 0
+
+    from django.db import transaction
+    saved_count = 0
     
-    failed_ids = []
+    try:
+        with transaction.atomic():
+            # DataFrame의 각 행을 처리
+            for _, row in data.iterrows():
+                video_id = row.get("youtube_id")
+                if not video_id:
+                    logger.warning("⚠️ video_id 없음, 건너뜁니다")
+                    continue
 
-    with transaction.atomic():
-        try:
-            # DataFrame의 첫 번째 행을 딕셔너리로 변환
-            data_dict = data.iloc[0].to_dict()
-            video_id = data_dict.get("youtube_id")
-            if not video_id:
-                logger.warning("⚠️ video_id 없음, 저장 불가")
-                return
-            
-            # 날짜 형식 변환
-            extracted_date = format_date(data_dict.get("extracted_date", ""))
-            upload_date = format_date(data_dict.get("upload_date", ""))
-            
-            # 구독자 수와 조회수를 정수로 변환
-            subscriber_count = parse_subscriber_count(data_dict.get("subscribers", "0"))
-            view_count = parse_view_count(data_dict.get("view_count", "0"))
-            
-            # 설명란 정리
-            description = clean_description(data_dict.get("description", ""))
-            
-            video_data = {
-                "extracted_date": extracted_date,
-                "upload_date": upload_date,
-                "channel_name": data_dict.get("channel_name"),
-                "subscriber_count": subscriber_count,
-                "title": data_dict.get("title"),
-                "view_count": view_count,
-                "video_url": data_dict.get("video_url"),
-                "product_count": data_dict.get("product_count", 0),
-                "description": description,
-            }
-
-            video_obj = YouTubeVideo.objects.filter(video_id=video_id).first()
-
-            if video_obj:
-                # 변경된 필드가 있는지 확인
-                has_changes = any(
-                    getattr(video_obj, field) != value
-                    for field, value in video_data.items()
-                )
-                if has_changes:
-                    for field, value in video_data.items():
-                        setattr(video_obj, field, value)
-                    video_obj.save()
-                    logger.info(f"DB 업데이트 완료: {video_id}")
-                else:
-                    logger.info(f"변경 없음: {video_id}")
-            else:
-                video_obj = YouTubeVideo.objects.create(video_id=video_id, **video_data)
-                logger.info(f"DB 저장 완료: {video_id}")
-
-            # 제품 저장
-            try:
-                products = json.loads(data_dict.get("products", "[]"))
-                # 기존 제품 정보 삭제
-                YouTubeProduct.objects.filter(video=video_obj).delete()
+                # 날짜 형식 변환
+                extracted_date = format_date(row.get("extracted_date", ""))
+                upload_date = format_date(row.get("upload_date", ""))
                 
-                # 새로운 제품 정보 저장
-                for product in products:
-                    if not product.get("title"):  # 제품명이 없으면 건너뛰기
-                        continue
+                # 구독자 수와 조회수를 정수로 변환
+                subscriber_count = parse_subscriber_count(row.get("subscribers", "0"))
+                view_count = parse_view_count(row.get("view_count", "0"))
+                
+                # 설명란 정리
+                description = clean_description(row.get("description", ""))
+                
+                # 비디오 데이터 생성 또는 업데이트
+                video_obj, created = YouTubeVideo.objects.update_or_create(
+                    video_id=video_id,
+                    defaults={
+                        "extracted_date": extracted_date,
+                        "upload_date": upload_date,
+                        "channel_name": row.get("channel_name"),
+                        "subscriber_count": subscriber_count,
+                        "title": row.get("title"),
+                        "view_count": view_count,
+                        "video_url": row.get("video_url"),
+                        "product_count": row.get("product_count", 0),
+                        "description": description,
+                    }
+                )
+
+                # 제품 정보 처리
+                try:
+                    # products 컬럼에서 JSON 문자열을 파싱
+                    products = json.loads(row.get("products", "[]"))
                     
-                    YouTubeProduct.objects.create(
-                        video=video_obj,
-                        product_name=product.get("title", ""),
-                        product_price=product.get("price", ""),
-                        product_image_link=product.get("imageUrl", ""),
-                        product_link=product.get("url", "")
-                    )
-                logger.info(f"✅ {len(products)}개의 제품 정보 저장 완료 (video_id: {video_id})")
-            except json.JSONDecodeError:
-                logger.error(f"❌ 제품 정보 JSON 파싱 실패 (video_id: {video_id})")
-            except Exception as e:
-                logger.error(f"❌ 제품 정보 저장 실패 (video_id: {video_id}): {e}")
+                    # 기존 제품 정보 삭제
+                    YouTubeProduct.objects.filter(video=video_obj).delete()
+                    
+                    # 새로운 제품 정보 저장
+                    for product in products:
+                        if not product.get("title"):  # 제품명이 없으면 건너뛰기
+                            continue
+                        
+                        YouTubeProduct.objects.create(
+                            video=video_obj,
+                            product_name=product.get("title", ""),
+                            product_price=product.get("price", ""),
+                            product_image_link=product.get("imageUrl", ""),
+                            product_link=product.get("url", "")
+                        )
+                    logger.info(f"✅ {len(products)}개의 제품 정보 저장 완료 (video_id: {video_id})")
+                    saved_count += 1
+                    
+                except json.JSONDecodeError:
+                    logger.error(f"❌ 제품 정보 JSON 파싱 실패 (video_id: {video_id})")
+                except Exception as e:
+                    logger.error(f"❌ 제품 정보 저장 실패 (video_id: {video_id}): {e}")
 
-        except Exception as e:
-            logger.error(f"❌ 저장 실패 - video_id: {video_id} | 에러: {e}")
-            failed_ids.append(video_id)
-        
-    # 실패한 video_id 파일로 저장
-    if failed_ids:
-        with open("logs/failed_ids.txt", "w") as f:
-            for vid in failed_ids:
-                f.write(f"{vid}\n")
-        logger.warning(f"⚠️ 저장 실패한 video_id {len(failed_ids)}개 저장 완료: failed_ids.txt")
+    except Exception as e:
+        logger.error(f"❌ DB 저장 중 에러 발생: {e}")
+        return 0
 
+    return saved_count
 
 # ------------------------------------- ⬇️ 유튜브 채널의 전체 크롤링을 실행하는 함수 ------------------------------
 def crawl_channel_videos(channel_url: str, save_path: str):
