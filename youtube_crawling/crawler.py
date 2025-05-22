@@ -422,7 +422,7 @@ def save_to_excel(df: pd.DataFrame, file_path: str):
 def save_to_db(data: dict):
     from django.db import transaction
 
-    if not data:
+    if data.empty:
         logger.warning("⚠️ 저장할 데이터가 없습니다.")
         return
     
@@ -430,21 +430,23 @@ def save_to_db(data: dict):
 
     with transaction.atomic():
         try:
-            video_id = data.get("youtube_id")
+            # DataFrame의 첫 번째 행을 딕셔너리로 변환
+            data_dict = data.iloc[0].to_dict()
+            video_id = data_dict.get("youtube_id")
             if not video_id:
                 logger.warning("⚠️ video_id 없음, 저장 불가")
                 return
             
             video_data = {
-                "extracted_date": data.get("extracted_date"),
-                "upload_date": data.get("upload_date"),
-                "channel_name": data.get("channel_name"),
-                "subscriber_count": data.get("subscribers"),
-                "title": data.get("title"),
-                "view_count": data.get("view_count"),
-                "video_url": data.get("video_url"),
-                "product_count": data.get("product_count", 0),
-                "description": data.get("description"),
+                "extracted_date": data_dict.get("extracted_date"),
+                "upload_date": data_dict.get("upload_date"),
+                "channel_name": data_dict.get("channel_name"),
+                "subscriber_count": data_dict.get("subscribers"),
+                "title": data_dict.get("title"),
+                "view_count": data_dict.get("view_count"),
+                "video_url": data_dict.get("video_url"),
+                "product_count": data_dict.get("product_count", 0),
+                "description": data_dict.get("description"),
             }
 
             video_obj = YouTubeVideo.objects.filter(video_id=video_id).first()
@@ -467,7 +469,7 @@ def save_to_db(data: dict):
                 logger.info(f"DB 저장 완료: {video_id}")
 
             # 제품 저장
-            products = data.get("products", [])
+            products = data_dict.get("products", [])
             for p in products:
                 YouTubeProduct.objects.update_or_create(
                     video=video_obj,
