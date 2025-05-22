@@ -2,8 +2,11 @@ from rest_framework import viewsets
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
+
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+
+from urllib.parse import urlparse
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -15,9 +18,14 @@ from youtube_crawling.crawler import collect_video_data, save_youtube_data_to_db
 
 from youtube_crawling.tasks import crawl_channel_videos
 
+
 # ------------------------------------- ⬇️ 크롤링 자동화 딸깍 클래스 -------------------------------
 
 class ChannelCrawlTriggerView(APIView):
+    def is_valid_youtube_channel_url(url):
+        parsed = urlparse(url)
+        return parsed.scheme in ['http', 'https'] and "youtube.com" in parsed.netloc
+    
     @swagger_auto_schema(
         operation_summary="자동 크롤링할 유튜브 URL 목력 입력",
         request_body=openapi.Schema(
@@ -255,7 +263,7 @@ class YouTubeVideoOneAPIView(APIView):
                 'subscriber_count' : openapi.Schema(type=openapi.TYPE_STRING, description='구독자 수 변경'),
                 'title': openapi.Schema(type=openapi.TYPE_STRING, description='새로운 제목'),
                 'view_count': openapi.Schema(type=openapi.TYPE_INTEGER, description='조회 수 변경'),
-                'video_url': openapi.Schema(type=openapi.TYPE_INTEGER, description='영상 링크 변경'),
+                'video_url': openapi.Schema(type=openapi.TYPE_STRING, description='영상 링크 변경'),
                 'product_count' : openapi.Schema(type=openapi.TYPE_STRING, description='제품 수 변경'),
                 'description': openapi.Schema(type=openapi.TYPE_STRING, description='설명 변경')
             },
@@ -276,6 +284,11 @@ class YouTubeVideoOneAPIView(APIView):
         responses={200: '수정 성공', 404: '영상 없음'}
     )
     def patch(self, request):
+        allowed_fields = [
+        'extracted_date', 'upload_date', 'channel_name', 'subscriber_count',
+        'title', 'view_count', 'video_url', 'product_count', 'description'
+    ]
+
         video_id = request.data.get("video_id")
         if not video_id:
             return Response({"error": "video_id를 제공해주세요."}, status=status.HTTP_400_BAD_REQUEST)
@@ -284,7 +297,7 @@ class YouTubeVideoOneAPIView(APIView):
             video = YouTubeVideo.objects.get(video_id=video_id)
 
             updated = False
-            for field in ['title', 'description', 'product_count']:
+            for field in allowed_fields:
                 if field in request.data:
                     setattr(video, field, request.data[field])
                     updated = True
