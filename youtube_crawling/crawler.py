@@ -219,21 +219,68 @@ def click_description(driver) -> str:
 def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
     products = []
     try:
-        script_tags = soup.find_all("script")
-        for tag in script_tags:
-            if "var productsData" in tag.text:
-                json_text = tag.string.split("var productsData = ")[1].split(";</script>")[0]
-                product_data = json.loads(json_text)
-                for product in product_data:
-                    products.append({
-                        "title": product.get("title", "없음"),
-                        "url": product.get("url", "없음"),
-                        "price": product.get("price", "없음"),
-                        "imageUrl": product.get("imageUrl", "없음"),
-                    })
-                break
+        # 제품 섹션 찾기
+        product_sections = soup.find_all("ytd-product-metadata-badge-renderer")
+        
+        if not product_sections:
+            # 새로운 YouTube 구조에서 제품 정보 찾기
+            product_sections = soup.find_all("ytd-merch-shelf-renderer")
+            
+        for section in product_sections:
+            try:
+                # 제품 이미지
+                img_tag = section.find("img")
+                image_url = img_tag.get("src") if img_tag else None
+                
+                # 제품 이름
+                title_tag = section.find(["yt-formatted-string", "span"], class_="product-title") or \
+                           section.find("span", {"id": "title"})
+                title = title_tag.text.strip() if title_tag else "제품명 없음"
+                
+                # 제품 가격
+                price_tag = section.find(["yt-formatted-string", "span"], class_="price") or \
+                           section.find("span", {"id": "price"})
+                price = price_tag.text.strip() if price_tag else None
+                
+                # 제품 링크
+                link_tag = section.find("a")
+                link = link_tag.get("href") if link_tag else None
+                if link and not link.startswith("http"):
+                    link = f"https://www.youtube.com{link}"
+                
+                products.append({
+                    "title": title,
+                    "url": link,
+                    "price": price,
+                    "imageUrl": image_url,
+                })
+                
+            except Exception as e:
+                logger.warning(f"개별 제품 파싱 중 오류: {e}")
+                continue
+                
+        if not products:
+            # 스크립트에서 제품 데이터 찾기 (기존 방식)
+            script_tags = soup.find_all("script")
+            for tag in script_tags:
+                if tag.string and "var productsData" in tag.string:
+                    try:
+                        json_text = tag.string.split("var productsData = ")[1].split(";</script>")[0]
+                        product_data = json.loads(json_text)
+                        for product in product_data:
+                            products.append({
+                                "title": product.get("title", "없음"),
+                                "url": product.get("url", "없음"),
+                                "price": product.get("price", "없음"),
+                                "imageUrl": product.get("imageUrl", "없음"),
+                            })
+                    except Exception as e:
+                        logger.warning(f"스크립트 파싱 중 오류: {e}")
+                    break
+                    
     except Exception as e:
         logger.error(f"❌ 제품 정보 추출 중 오류 발생: {e}")
+        
     return products
     
 
@@ -244,34 +291,112 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
 
     try:
         driver.get(video_url)
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "description")))
+        # 페이지 로딩 대기 시간 증가 및 명시적 대기 조건 추가
+        wait = WebDriverWait(driver, 20)
+        
+        # 제품 섹션이 로드될 때까지 대기
+        try:
+            wait.until(lambda d: d.find_elements(By.CSS_SELECTOR, 
+                "ytd-product-metadata-badge-renderer, ytd-merch-shelf-renderer"))
+        except:
+            logger.info("제품 섹션을 찾을 수 없습니다. 계속 진행합니다.")
+        
+        # 페이지 스크롤하여 동적 컨텐츠 로드
+        driver.execute_script("window.scrollTo(0, 400);")
+        time.sleep(2)
+        
+        # 설명란 펼치기 버튼 클릭 시도
+        try:
+            more_button = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "tp-yt-paper-button#expand")))
+            driver.execute_script("arguments[0].click();", more_button)
+            time.sleep(1)
+        except:
+            logger.info("설명란 펼치기 버튼을 찾을 수 없습니다.")
+        
         soup = BeautifulSoup(driver.page_source, "html.parser")
 
         # 메타데이터 추출
         video_id = video_url.split("v=")[-1]
-        # 제목
-        title_tag = soup.select_one("h1.title")
-        title = title_tag.text.strip() if title_tag else "제목 없음"
+        
+        # 제목 (여러 선택자 시도)
+        title_selectors = [
+            "h1.title yt-formatted-string",
+            "h1.title",
+            "#title h1"
+        ]
+        title = None
+        for selector in title_selectors:
+            title_tag = soup.select_one(selector)
+            if title_tag:
+                title = title_tag.text.strip()
+                break
+        title = title or "제목 없음"
 
-        # 채널명
-        channel_tag = soup.select_one("ytd-channel-name a")
-        channel_name = channel_tag.text.strip() if channel_tag else "채널 없음"
+        # 채널명 (여러 선택자 시도)
+        channel_selectors = [
+            "ytd-channel-name yt-formatted-string#text a",
+            "ytd-channel-name a",
+            "#channel-name a"
+        ]
+        channel_name = None
+        for selector in channel_selectors:
+            channel_tag = soup.select_one(selector)
+            if channel_tag:
+                channel_name = channel_tag.text.strip()
+                break
+        channel_name = channel_name or "채널 없음"
 
         # 구독자 수
-        sub_tag = soup.select_one("yt-formatted-string#owner-sub-count")
-        subscriber_count = sub_tag.text.strip() if sub_tag else "구독자 수 없음"
+        sub_selectors = [
+            "yt-formatted-string#owner-sub-count",
+            "#subscriber-count"
+        ]
+        subscriber_count = None
+        for selector in sub_selectors:
+            sub_tag = soup.select_one(selector)
+            if sub_tag:
+                subscriber_count = sub_tag.text.strip()
+                break
+        subscriber_count = subscriber_count or "구독자 수 없음"
 
         # 조회수
-        view_count_tag = soup.select_one("span.view-count")
-        view_count = view_count_tag.text.strip() if view_count_tag else "조회수 없음"
+        view_selectors = [
+            "span.view-count",
+            "#view-count"
+        ]
+        view_count = None
+        for selector in view_selectors:
+            view_tag = soup.select_one(selector)
+            if view_tag:
+                view_count = view_tag.text.strip()
+                break
+        view_count = view_count or "조회수 없음"
 
         # 업로드일
-        upload_date_tag = soup.select_one("div#info-strings yt-formatted-string")
-        upload_date = upload_date_tag.text.strip() if upload_date_tag else "날짜 없음"
+        date_selectors = [
+            "#info-strings yt-formatted-string",
+            "#upload-info .date"
+        ]
+        upload_date = None
+        for selector in date_selectors:
+            date_tag = soup.select_one(selector)
+            if date_tag:
+                upload_date = date_tag.text.strip()
+                break
+        upload_date = upload_date or "날짜 없음"
 
         # 설명란
-        desc_tag = soup.select_one("yt-formatted-string.content")
-        description = desc_tag.text.strip() if desc_tag else "설명 없음"
+        desc_selectors = [
+            "ytd-expander#description yt-formatted-string",
+            "#description"
+        ]
+        description = None
+        for selector in desc_selectors:
+            desc_tag = soup.select_one(selector)
+            if desc_tag:
+                description = desc_tag.text.strip()
+                break
+        description = description or "설명 없음"
 
         # 제품 추출
         products = extract_products_from_dom(soup)
@@ -308,7 +433,6 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 "product_image_link": None
             }]
 
-            
         logger.info(f"✅ 영상 정보 및 제품 {product_count}개 수집 완료")
         return pd.DataFrame([base_data])
     
