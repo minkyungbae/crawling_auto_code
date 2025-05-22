@@ -248,61 +248,105 @@ def click_description(driver) -> str:
 def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
     products = []
     try:
-        # 제품 섹션 찾기
-        product_sections = soup.find_all("ytd-product-metadata-badge-renderer")
+        # 제품 섹션 찾기 (여러 선택자 시도)
+        product_sections = []
+        selectors = [
+            "ytd-product-metadata-badge-renderer",
+            "ytd-merch-shelf-renderer",
+            "ytd-product-item-renderer",
+            "#product-shelf"
+        ]
         
+        for selector in selectors:
+            sections = soup.find_all(selector)
+            if sections:
+                product_sections.extend(sections)
+                logger.info(f"제품 섹션 찾음: {selector}")
+                
         if not product_sections:
-            # 새로운 YouTube 구조에서 제품 정보 찾기
-            product_sections = soup.find_all("ytd-merch-shelf-renderer")
+            logger.warning("제품 섹션을 찾을 수 없습니다.")
+            return products
             
         for section in product_sections:
             try:
-                # 제품 이미지
-                img_tag = section.find("img")
-                image_url = img_tag.get("src") if img_tag else None
+                # 제품 이미지 (여러 선택자 시도)
+                image_url = None
+                img_selectors = ["img", "yt-img-shadow img", ".product-image img"]
+                for selector in img_selectors:
+                    img_tag = section.select_one(selector)
+                    if img_tag and (img_url := img_tag.get("src")):
+                        image_url = img_url
+                        break
                 
-                # 제품 이름
-                title_tag = section.find(["yt-formatted-string", "span"], class_="product-title") or \
-                           section.find("span", {"id": "title"})
-                title = title_tag.text.strip() if title_tag else "제품명 없음"
+                # 제품 이름 (여러 선택자 시도)
+                title = None
+                title_selectors = [
+                    ".product-title", 
+                    "#title",
+                    "span[id='title']",
+                    "yt-formatted-string.product-title"
+                ]
+                for selector in title_selectors:
+                    if title_elem := section.select_one(selector):
+                        if title_text := title_elem.get_text(strip=True):
+                            title = title_text
+                            break
                 
-                # 제품 가격
-                price_tag = section.find(["yt-formatted-string", "span"], class_="price") or \
-                           section.find("span", {"id": "price"})
-                price = price_tag.text.strip() if price_tag else None
+                # 제품 가격 (여러 선택자 시도)
+                price = None
+                price_selectors = [
+                    ".price",
+                    "#price",
+                    "span[id='price']",
+                    "yt-formatted-string.price"
+                ]
+                for selector in price_selectors:
+                    if price_elem := section.select_one(selector):
+                        if price_text := price_elem.get_text(strip=True):
+                            price = price_text
+                            break
                 
-                # 제품 링크
-                link_tag = section.find("a")
-                link = link_tag.get("href") if link_tag else None
-                if link and not link.startswith("http"):
-                    link = f"https://www.youtube.com{link}"
+                # 제품 링크 (여러 선택자 시도)
+                url = None
+                link_selectors = ["a", ".product-link", "#link"]
+                for selector in link_selectors:
+                    if link_elem := section.select_one(selector):
+                        if href := link_elem.get("href"):
+                            url = href if href.startswith("http") else f"https://www.youtube.com{href}"
+                            break
                 
-                products.append({
-                    "title": title,
-                    "url": link,
-                    "price": price,
-                    "imageUrl": image_url,
-                })
+                if title:  # 최소한 제품명은 있어야 함
+                    products.append({
+                        "title": title,
+                        "url": url or "",
+                        "price": price or "",
+                        "imageUrl": image_url or ""
+                    })
+                    logger.info(f"제품 추출 성공: {title}")
                 
             except Exception as e:
                 logger.warning(f"개별 제품 파싱 중 오류: {e}")
                 continue
                 
         if not products:
-            # 스크립트에서 제품 데이터 찾기 (기존 방식)
-            script_tags = soup.find_all("script")
-            for tag in script_tags:
-                if tag.string and "var productsData" in tag.string:
+            # 스크립트에서 제품 데이터 찾기
+            for script in soup.find_all("script"):
+                if not script.string:
+                    continue
+                    
+                script_text = script.string
+                if "var productsData" in script_text:
                     try:
-                        json_text = tag.string.split("var productsData = ")[1].split(";</script>")[0]
+                        json_text = script_text.split("var productsData = ")[1].split(";</script>")[0]
                         product_data = json.loads(json_text)
                         for product in product_data:
                             products.append({
-                                "title": product.get("title", "없음"),
-                                "url": product.get("url", "없음"),
-                                "price": product.get("price", "없음"),
-                                "imageUrl": product.get("imageUrl", "없음"),
+                                "title": product.get("title", ""),
+                                "url": product.get("url", ""),
+                                "price": product.get("price", ""),
+                                "imageUrl": product.get("imageUrl", "")
                             })
+                        logger.info(f"스크립트에서 {len(product_data)}개의 제품 추출")
                     except Exception as e:
                         logger.warning(f"스크립트 파싱 중 오류: {e}")
                     break
@@ -310,6 +354,7 @@ def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
     except Exception as e:
         logger.error(f"❌ 제품 정보 추출 중 오류 발생: {e}")
         
+    logger.info(f"총 {len(products)}개의 제품 추출 완료")
     return products
     
 
@@ -515,12 +560,14 @@ def update_youtube_data_to_db(dataframe: pd.DataFrame) -> int:
         for _, row in dataframe.iterrows():
             product_name = row.get('product_name')
             if product_name and pd.notna(product_name):
-                YouTubeProduct.objects.create(
+                product, created = YouTubeProduct.objects.update_or_create(
                     video=video,
-                    product_image_link=row.get('product_image_link'),
-                    product_name=product_name,
-                    product_price=row.get('product_price'),
-                    product_link=row.get('product_link'),
+                    product_name=row.get('title', '제품 없음'),
+                    defaults={
+                        "product_price": row.get('price'),
+                        "product_image_link": row.get('imageUrl'),
+                        "product_link": row.get('url')
+                    }
                 )
         logger.info(f"🔁 영상 정보 업데이트 완료: {video_id}")
         return 1
@@ -634,11 +681,11 @@ def save_to_db(data: dict):
                 if isinstance(p, dict):
                     product, created = YouTubeProduct.objects.update_or_create(
                         video=video_obj,
-                        product_name=p.get("name", "제품 없음"),
+                        product_name=p.get('title', '제품 없음'),
                         defaults={
-                            "product_price": p.get("price"),
-                            "product_image_link": p.get("image"),
-                            "product_link": p.get("link")
+                            "product_price": p.get('price'),
+                            "product_image_link": p.get('imageUrl'),
+                            "product_link": p.get('url')
                         }
                     )
                     if created:
