@@ -273,6 +273,10 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         desc_tag = soup.select_one("yt-formatted-string.content")
         description = desc_tag.text.strip() if desc_tag else "설명 없음"
 
+        # 제품 추출
+        products = extract_products_from_dom(soup)
+        product_count = len(products)
+
         # 기본 데이터 세트
         base_data = {
             "youtube_id": video_id,
@@ -287,9 +291,6 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
             "product_count": product_count,
             "products": [],
         }
-        # 제품 추출
-        products = extract_products_from_dom(soup)
-        product_count = len(products)
 
         if products:
             for p in products:
@@ -309,7 +310,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
 
             
         logger.info(f"✅ 영상 정보 및 제품 {product_count}개 수집 완료")
-        return pd.DataFrame(base_data)
+        return pd.DataFrame([base_data])
     
     except Exception as e:
         logger.error(f"❌ base_youtube_info 예외: {e}", exc_info=True)
