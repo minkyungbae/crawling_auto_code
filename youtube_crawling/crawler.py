@@ -15,7 +15,7 @@ from contextlib import contextmanager # 드라이버 관리하는 태그
 from bs4 import BeautifulSoup
 from datetime import datetime
 from typing import List, Union, Dict, Optional
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, parse_qsl
 from slugify import slugify
 import pandas as pd
 import logging, time, re, json, os, urllib.parse
@@ -308,11 +308,29 @@ def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
                 
                 # 제품 링크 (여러 선택자 시도)
                 url = None
-                link_selectors = ["a", ".product-link", "#link"]
+                link_selectors = [
+                    "a.yt-simple-endpoint[href*='redirect']",  # 외부 판매처 리다이렉트 링크
+                    "a[href*='shopping']",  # 쇼핑 관련 링크
+                    "a[target='_blank']",  # 새 창에서 열리는 외부 링크
+                    ".product-link[href]",  # 제품 링크
+                    "a[href]"  # 일반 링크
+                ]
                 for selector in link_selectors:
                     if link_elem := section.select_one(selector):
                         if href := link_elem.get("href"):
+                            # YouTube 리다이렉트 URL에서 실제 URL 추출
+                            if "redirect" in href:
+                                try:
+                                    parsed = urlparse(href)
+                                    query_params = dict(parse_qsl(parsed.query))
+                                    if 'q' in query_params:  # 실제 URL은 'q' 파라미터에 있음
+                                        href = query_params['q']
+                                except:
+                                    pass
+                            
+                            # 상대 경로인 경우 전체 URL로 변환
                             url = href if href.startswith("http") else f"https://www.youtube.com{href}"
+                            logger.info(f"제품 링크 추출: {url}")
                             break
                 
                 if title:  # 최소한 제품명은 있어야 함
@@ -497,7 +515,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
             "video_url": video_url,
             "description": description,
             "product_count": product_count,
-            "products": products
+            "products": json.dumps(products)  # 제품 정보를 JSON 문자열로 저장
         }
 
         logger.info(f"✅ 영상 정보 및 제품 {product_count}개 수집 완료")
@@ -673,27 +691,28 @@ def save_to_db(data: dict):
                 logger.info(f"DB 저장 완료: {video_id}")
 
             # 제품 저장
-            products = data_dict.get("products", [])
-            updated_count = 0
-            created_count = 0
-            
-            for p in products:
-                if isinstance(p, dict):
-                    product, created = YouTubeProduct.objects.update_or_create(
+            try:
+                products = json.loads(data_dict.get("products", "[]"))
+                # 기존 제품 정보 삭제
+                YouTubeProduct.objects.filter(video=video_obj).delete()
+                
+                # 새로운 제품 정보 저장
+                for product in products:
+                    if not product.get("title"):  # 제품명이 없으면 건너뛰기
+                        continue
+                    
+                    YouTubeProduct.objects.create(
                         video=video_obj,
-                        product_name=p.get('title', '제품 없음'),
-                        defaults={
-                            "product_price": p.get('price'),
-                            "product_image_link": p.get('imageUrl'),
-                            "product_link": p.get('url')
-                        }
+                        product_name=product.get("title", ""),
+                        product_price=product.get("price", ""),
+                        product_image_link=product.get("imageUrl", ""),
+                        product_link=product.get("url", "")
                     )
-                    if created:
-                        created_count += 1
-                    else:
-                        updated_count += 1
-                        
-            logger.info(f"✅ 제품 정보 처리 완료 - 생성: {created_count}개, 업데이트: {updated_count}개 (video_id: {video_id})")
+                logger.info(f"✅ {len(products)}개의 제품 정보 저장 완료 (video_id: {video_id})")
+            except json.JSONDecodeError:
+                logger.error(f"❌ 제품 정보 JSON 파싱 실패 (video_id: {video_id})")
+            except Exception as e:
+                logger.error(f"❌ 제품 정보 저장 실패 (video_id: {video_id}): {e}")
 
         except Exception as e:
             logger.error(f"❌ 저장 실패 - video_id: {video_id} | 에러: {e}")
