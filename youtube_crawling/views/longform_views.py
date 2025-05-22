@@ -49,6 +49,10 @@ class ChannelCrawlTriggerView(APIView):
         if not channel_urls or not isinstance(channel_urls, list):
             return Response({"error": "channel_url은 리스트여야 합니다."}, status=400)
 
+        invalid_urls = [url for url in channel_urls if not self.is_valid_youtube_channel_url(url)]
+        if invalid_urls:
+            return Response({"error": f"유효하지 않은 URL이 있습니다: {invalid_urls}"}, status=400)
+
         for url in channel_urls:
             crawl_channel_videos.delay(url)
 
