@@ -322,15 +322,18 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         title_selectors = [
             "h1.title yt-formatted-string",
             "h1.title",
-            "#title h1"
+            "#title h1",
+            "#container h1.style-scope.ytd-watch-metadata"
         ]
         title = None
         for selector in title_selectors:
-            title_tag = soup.select_one(selector)
-            if title_tag:
-                title = title_tag.text.strip()
-                break
+            title_elem = soup.select_one(selector)
+            if title_elem:
+                title = title_elem.get_text(strip=True)
+                if title:
+                    break
         title = title or "제목 없음"
+        logger.info(f"제목: {title}")
 
         # 채널명 (여러 선택자 시도)
         channel_selectors = [
@@ -362,7 +365,8 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         # 조회수
         view_selectors = [
             "span.view-count",
-            "#view-count"
+            "#view-count",
+            "ytd-video-view-count-renderer"
         ]
         view_count = None
         for selector in view_selectors:
@@ -375,7 +379,8 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         # 업로드일
         date_selectors = [
             "#info-strings yt-formatted-string",
-            "#upload-info .date"
+            "#upload-info .date",
+            "ytd-video-primary-info-renderer yt-formatted-string.ytd-video-primary-info-renderer:not([id])"
         ]
         upload_date = None
         for selector in date_selectors:
@@ -388,15 +393,19 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         # 설명란
         desc_selectors = [
             "ytd-expander#description yt-formatted-string",
-            "#description"
+            "#description",
+            "#description-inline-expander",
+            "#description-text-container"
         ]
         description = None
         for selector in desc_selectors:
             desc_tag = soup.select_one(selector)
             if desc_tag:
                 description = desc_tag.text.strip()
-                break
+                if description:
+                    break
         description = description or "설명 없음"
+        logger.info(f"설명 길이: {len(description)} 글자")
 
         # 제품 추출
         products = extract_products_from_dom(soup)
@@ -414,24 +423,8 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
             "video_url": video_url,
             "description": description,
             "product_count": product_count,
-            "products": [],
+            "products": products
         }
-
-        if products:
-            for p in products:
-                base_data["products"].append({
-                    "name": p.get("title", ""),
-                    "link": p.get("url", ""),
-                    "price": p.get("price", None),
-                    "image": p.get("imageUrl", None)
-                })
-        else:
-            base_data["products"] = [{
-                "product_name": "제품 없음",
-                "product_link": None,
-                "product_price": None,
-                "product_image_link": None
-            }]
 
         logger.info(f"✅ 영상 정보 및 제품 {product_count}개 수집 완료")
         return pd.DataFrame([base_data])
