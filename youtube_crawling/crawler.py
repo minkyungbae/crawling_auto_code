@@ -594,16 +594,26 @@ def save_to_db(data: dict):
 
             # 제품 저장
             products = data_dict.get("products", [])
+            updated_count = 0
+            created_count = 0
+            
             for p in products:
-                YouTubeProduct.objects.update_or_create(
-                    video=video_obj,
-                    product_name=p.get("product_name", "제품 없음"),
-                    defaults={
-                        "product_price": p.get("product_price", None),
-                        "product_image_link": p.get("product_image_link", None),
-                        "product_link": p.get("product_link", None),
-                    }
-                )
+                if isinstance(p, dict):
+                    product, created = YouTubeProduct.objects.update_or_create(
+                        video=video_obj,
+                        product_name=p.get("name", "제품 없음"),
+                        defaults={
+                            "product_price": p.get("price"),
+                            "product_image_link": p.get("image"),
+                            "product_link": p.get("link")
+                        }
+                    )
+                    if created:
+                        created_count += 1
+                    else:
+                        updated_count += 1
+                        
+            logger.info(f"✅ 제품 정보 처리 완료 - 생성: {created_count}개, 업데이트: {updated_count}개 (video_id: {video_id})")
 
         except Exception as e:
             logger.error(f"❌ 저장 실패 - video_id: {video_id} | 에러: {e}")
