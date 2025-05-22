@@ -14,7 +14,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 from ..models import YouTubeVideo, YouTubeProduct
 from youtube_crawling.serializers.video_ids_serializers import YouTubeVideoSerializer, ProductSerializer
-from youtube_crawling.crawler import collect_video_data, save_youtube_data_to_db, update_youtube_data_to_db
+from youtube_crawling.crawler import collect_video_data, save_to_db, update_youtube_data_to_db
 
 from youtube_crawling.tasks import crawl_channel_videos
 
@@ -102,7 +102,7 @@ class YoutubeLongFormCrawlAPIView(APIView):
             for index, vid in enumerate(video_ids, start=1):
                 try:
                     df = collect_video_data(driver, vid, index=index, total=len(video_ids))
-                    saved_count += save_youtube_data_to_db(df)
+                    saved_count += save_to_db(df)
                 except Exception as e:
                     print(f"[❌ 오류] {vid} 처리 중: {e}")
                     failed_ids.append(vid)
