@@ -25,17 +25,11 @@ import logging, time, re, json, os, urllib.parse
 
 logger = logging.getLogger(__name__)  # logger.info(), logger.warning()만 써야해용
 
-def crawl_youtube():
-    logger.info("유튜브 크롤링을 시작합니다.")
-    logger.warning("테스트 경고 메시지입니다.")
-    logger.info("유튜브 크롤링을 완료했습니다.")
-
-
 # --------- driver 한 번으로 정의 ---------------
 @contextmanager
 def create_driver():
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless")  # 크롬 창 띄우지 않는 기능(주석처리하면 창 띄워져요)
+    # options.add_argument("--headless")  # 크롬 창 띄우지 않는 기능(주석처리하면 창 띄워져요)
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
@@ -114,7 +108,7 @@ def parse_view_count(text: str) -> int:
             return 0
         cleaned = text.replace("조회수", "").replace("회", "").replace(",", "").strip()
         return int(cleaned)
-    except ValueError:
+    except ValueError as e:
         logger.warning(f"⚠️ 조회수 파싱 실패: '{text}', 이유: {e}")
         return 0
 
@@ -195,6 +189,28 @@ def click_description(driver) -> str:
         logger.error(f"❌ 설명 추출 실패: {e}", exc_info=True)
         return "더보기란에 설명 없음"
     
+    
+#--------------------------------------- 제품 정보 추출 -------------------------------------
+def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
+    products = []
+    try:
+        script_tags = soup.find_all("script")
+        for tag in script_tags:
+            if "var productsData" in tag.text:
+                json_text = tag.string.split("var productsData = ")[1].split(";</script>")[0]
+                product_data = json.loads(json_text)
+                for product in product_data:
+                    products.append({
+                        "title": product.get("title", "없음"),
+                        "url": product.get("url", "없음"),
+                        "price": product.get("price", "없음"),
+                        "imageUrl": product.get("imageUrl", "없음"),
+                    })
+                break
+    except Exception as e:
+        logger.error(f"❌ 제품 정보 추출 중 오류 발생: {e}")
+    return products
+    
 
 # ---------------------- ⬇️ 영상 기본 정보: 제목, 채널명, 구독자 수, 조회수, 업로드일, 제품 개수 ----------------------
 def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
@@ -215,7 +231,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         view_text = safe_get_text(soup.select_one(".view-count"))
         view_count = parse_view_count(view_text)
         upload_date = safe_get_text(soup.select_one("#info-strings yt-formatted-string"))
-        description = safe_get_text(soup.select_one("#description"))
+        description = click_description(driver)
 
         # 기본 데이터 세트
         base_data = {
@@ -233,13 +249,13 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         products = extract_products_from_dom(soup)
         product_count = len(products)
 
-        if products > 0:
+        if products:
             # 제품 각각에 메타데이터 병합
             full_data = [{**base_data, 
                         "product_name": p.get("title", ""), 
                         "product_link": p.get("url", ""),
-                        "product_price": None,
-                        "product_image_link": None,
+                        "product_price": p.get("price", None),
+                        "product_image_link": p.get("imageUrl", None),
                         "product_count": product_count} for p in products]
 
         else:
@@ -256,38 +272,6 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
     except Exception as e:
         logger.error(f"❌ base_youtube_info 예외: {e}", exc_info=True)
         return pd.DataFrame()
-
-#--------------------------------------- 제품 정보 추출 -------------------------------------
-def extract_products_from_dom(soup) -> List[Dict]:
-    script_tag = soup.find("script", string=lambda s: s and "var ytInitialData" in s)
-    if not script_tag:
-        logger.warning("⚠️ ytInitialData 스크립트 태그 없음")
-        return []
-    
-    try:
-        json_text = script_tag.string.split("var ytInitialData =")[-1].rsplit("};", 1)[0] + "}"
-        data = json.loads(json_text)
-    except json.JSONDecodeError:
-        logger.warning("⚠️ ytInitialData JSON 파싱 실패")
-        return []
-    
-    products = []
-    try:
-        contents = data["contents"]["twoColumnWatchNextResults"]["results"]["results"]["contents"]
-        for item in contents:
-            section = item.get("itemSectionRenderer", {}).get("contents", [{}])[0]
-            sponsor = section.get("videoDescriptionSponsorSectionRenderer")
-            if sponsor:
-                for prod in sponsor.get("sponsorSection", {}).get("products", []):
-                    title = prod.get("title", {}).get("runs", [{}])[0].get("text", "")
-                    url = prod.get("navigationEndpoint", {}).get("commandMetadata", {}).get("webCommandMetadata", {}).get("url", "")
-                    if title and url:
-                        products.append({"title": title, "url": url})
-        return products
-    except Exception as e:
-        logger.warning(f"⚠️ 제품 데이터 추출 실패: {e}")
-        return []
-
 
 # ----------------------------------------------- ⬇️ 유튜브 영상 URL 접속 후 데이터 수집 수행 -----------------------------------------------
 
@@ -309,76 +293,7 @@ def collect_video_data(driver, video_id: str, index: int = None, total: int = No
     
     except Exception as e:
             logger.error(f"❌ 예외 발생 - collect_video_data(): {video_id} | 에러: {e}")
-            return None
-
-
-# -------------------------------------------- ⬇️ DB(sqlite) 저장 함수 ---------------------------------------- 
-def save_youtube_data_to_db(df: pd.DataFrame) -> int:
-    if df.empty:
-        logger.warning("❌ 저장할 데이터프레임이 비어 있습니다.")
-        return 0
-    
-    # 영상은 video_id 기준으로 1개, 제품은 여러 개
-    video_data = df.iloc[0]
-
-    try:
-
-        video, created = YouTubeVideo.objects.get_or_create(
-            video_id=video_data["video_id"],
-            defaults={
-                "extracted_date": video_data["extracted_date"],
-                "video_url": video_data["video_url"],
-                "title": video_data["title"],
-                "channel_name": video_data["channel_name"],
-                "subscriber_count": video_data["subscriber_count"],
-                "view_count": video_data["view_count"],
-                "upload_date": video_data["upload_date"],
-                "description": video_data["description"]
-            }
-        )
-        if not created:
-            logger.info("⚠️ 이미 존재하는 영상 id입니다: %s", video.video_id)
-            return 0
-
-        for _, row in df.iterrows():
-            YouTubeProduct.objects.get_or_create(
-                video=video,
-                url=row["product_link"],
-                defaults={
-                    "title": row["product_name"],
-                    "price": row.get("product_price"),
-                    "image_url": row.get("product_image_link")
-                }
-            )
-
-        logger.info("📹 영상 및 제품 저장 완료: %s", video.video_id)
-        return len(df)
-    
-    except Exception as e:
-        logger.error(f"❌ DB 저장 실패: {e}", exc_info=True)
-        return 0
-    
-# ------------------------------------- ⬇️ 엑셀/CSV 저장 함수 ------------------------------
-def export_videos_to_csv(file_path="youtube_videos.csv"):
-    videos = YouTubeVideo.objects.all().prefetch_related("product_set")
-    rows = []
-    for video in videos:
-        for product in video.product_set.all():
-            rows.append({
-                "video_id": video.video_id,
-                "title": video.title,
-                "channel_name": video.channel_name,
-                "view_count": video.view_count,
-                "upload_date": video.upload_date,
-                "product_title": product.title,
-                "product_url": product.url,
-                "product_price": product.price,
-                "product_image_link": product.image_url
-            })
-    df = pd.DataFrame(rows)
-    df.to_csv(file_path, index=False, encoding="utf-8-sig")
-    logger.info("Exported video and product data to CSV: %s", file_path)
-
+            return None 
 
 # ------------------------------------- ⬇️ 크롤링된 유튜브 영상을 조회하고 수정하는 코드 ------------------------------
 def update_youtube_data_to_db(dataframe: pd.DataFrame) -> int:
@@ -466,6 +381,8 @@ def save_to_db(df: pd.DataFrame):
     if df.empty:
         logger.warning("⚠️ 저장할 데이터가 없습니다.")
         return
+    
+    failed_ids = []
 
     with transaction.atomic():
         video_cache = {}  # video_id 별로 video 객체 캐싱
@@ -473,10 +390,12 @@ def save_to_db(df: pd.DataFrame):
         for _, row in df.iterrows():
             video_id = row["video_id"]
 
-            if video_id not in video_cache:
-                video_obj, created = YouTubeVideo.objects.update_or_create(
-                    video_id=video_id,
-                    defaults={
+            try:
+                # video 객체 캐싱 또는 DB에서 조회
+                if video_id not in video_cache:
+                    video_obj = YouTubeVideo.objects.filter(video_id=video_id).first()
+
+                    video_data = {
                         "extracted_date": row["extracted_date"],
                         "upload_date": row["upload_date"],
                         "channel_name": row["channel_name"],
@@ -487,43 +406,71 @@ def save_to_db(df: pd.DataFrame):
                         "product_count": row.get("product_count", ""),
                         "description": row["description"],
                     }
-                )
-                video_cache[video_id] = video_obj
-                if created:
-                    logger.info(f"DB 저장 완료: {video_obj.video_id}")
-                else:
-                    logger.info(f"DB 업데이트 완료: {video_obj.video_id}")
-            else:
-                video_obj = video_cache[video_id]
 
-            # 제품 저장
-            product_name = row.get("product_name")
-            if product_name:
-                YouTubeProduct.objects.update_or_create(
-                    video=video_obj,
-                    product_name=product_name,
-                    defaults={
-                        "product_price": row.get("product_price", ""),
-                        "product_image_link": row.get("product_image_link", ""),
-                        "product_link": row.get("product_link", ""),
-                    }
-                )
+                    if video_obj:
+                        # 변경된 필드가 있는지 확인
+                        has_changes = any(
+                            getattr(video_obj, field) != value
+                            for field, value in video_data.items()
+                        )
+                        if has_changes:
+                            for field, value in video_data.items():
+                                setattr(video_obj, field, value)
+                            video_obj.save()
+                            logger.info(f"DB 업데이트 완료: {video_id}")
+                        else:
+                            logger.info(f"변경 없음: {video_id}")
+                    else:
+                        video_obj = YouTubeVideo.objects.create(video_id=video_id, **video_data)
+                        logger.info(f"DB 저장 완료: {video_id}")
+
+                    video_cache[video_id] = video_obj
+                else:
+                    video_obj = video_cache[video_id]
+
+                # 제품 저장
+                product_name = row.get("product_name")
+                if product_name:
+                    YouTubeProduct.objects.update_or_create(
+                        video=video_obj,
+                        product_name=product_name,
+                        defaults={
+                            "product_price": row.get("product_price", ""),
+                            "product_image_link": row.get("product_image_link", ""),
+                            "product_link": row.get("product_link", ""),
+                        }
+                    )
+            except Exception as e:
+                logger.error(f"❌ 저장 실패 - video_id: {video_id} | 에러: {e}")
+                failed_ids.append(video_id)
+
+    # 실패한 video_id 파일로 저장
+    if failed_ids:
+        with open("failed_ids.txt", "w") as f:
+            for vid in failed_ids:
+                f.write(f"{vid}\n")
+        logger.warning(f"⚠️ 저장 실패한 video_id {len(failed_ids)}개 저장 완료: failed_ids.txt")
 
 # ------------------------------------- ⬇️ 유튜브 채널의 전체 크롤링을 실행하는 함수 ------------------------------
 def crawl_channel_videos(channel_url: str, save_path: str):
     with create_driver() as driver:
         video_ids = get_all_video_ids(driver, channel_url)
-        logger.info(f"총 {len(video_ids)}개 영상 크롤링 시작")
+
+        total = len(video_ids)
+        if total == 0:
+            logger.warning("❌ 채널에서 수집된 영상 ID가 없습니다.")
+            return
+        
+        logger.info(f"총 {len(total)}개 영상 크롤링 시작")
         all_data = pd.DataFrame()
 
-        for idx, vid in enumerate(video_ids, 1):
-            video_url = f"https://www.youtube.com/watch?v={vid}"
-            df = base_youtube_info(driver, video_url)
-            if not df.empty:
-                all_data = pd.concat([all_data, df], ignore_index=True)
-            else:
-                logger.warning(f"⚠️ 영상 크롤링 실패: {video_url}")
-            logger.info(f"진행: {idx}/{len(video_ids)}")
+        for i, video_id in enumerate(video_ids, start=1):
+            try:
+                df = collect_video_data(driver, video_id, i, total)
+                if df is not None and not df.empty:
+                    save_to_db(df)
+            except Exception as e:
+                logger.error(f"❌ 영상 크롤링 중 에러 발생: {video_id}, 에러: {e}", exc_info=True)
 
         if not all_data.empty:
             save_to_db(all_data)
