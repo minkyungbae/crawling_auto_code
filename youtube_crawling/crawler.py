@@ -131,7 +131,18 @@ def parse_view_count(text: str) -> int:
     try:
         if not text:
             return 0
+        # 조회수와 회를 제거하고 숫자와 소수점, 단위(만)만 남김
         cleaned = text.replace("조회수", "").replace("회", "").replace(",", "").strip()
+        
+        # 백 단위가 있는 경우
+        if "천" in cleaned:
+            number = float(cleaned.replace("백", ""))
+            return int(number * 1000)
+        # 만 단위가 있는 경우
+        elif "만" in cleaned:
+            number = float(cleaned.replace("만", ""))
+            return int(number * 10000)
+        
         return int(cleaned)
     except ValueError as e:
         logger.warning(f"⚠️ 조회수 파싱 실패: '{text}', 이유: {e}")
@@ -141,29 +152,47 @@ def parse_view_count(text: str) -> int:
 # ----------------------------- ⬇️ 구독자 수 텍스트를 숫자 형태로 변환 (예: 1.2만명 -> 12000) -----------------------------
 def parse_subscriber_count(text: str) -> int:
     try:
-        text = text.replace("명", "").replace(",", "").strip()
+        # 구독자와 명을 제거하고 숫자와 소수점, 단위(천, 만)만 남김
+        text = text.replace("구독자", "").replace("명", "").replace(",", "").strip()
+        
         if "천" in text:
-            return int(float(text.replace("천", "")) * 1_000)
+            number = float(text.replace("천", ""))
+            return int(number * 1000)
         elif "만" in text:
-            return int(float(text.replace("만", "")) * 10_000)
+            number = float(text.replace("만", ""))
+            return int(number * 10000)
+        
         return int(text)
     except Exception as e:
         logger.warning(f"⚠️ 구독자 수 파싱 실패: '{text}', 이유: {e}")
         return 0
 
 
-# ---------------------- ⬇️ 업로드 날짜 문자열을 'YYYYMMDD' 형식으로 변환 ----------------------
-def parse_upload_date(text: str) -> Union[str, None]:
+# ---------------------- ⬇️ 날짜를 YYYY-MM-DD 형식으로 변환 ----------------------
+def format_date(date_str: str) -> str:
     try:
-        if match := re.search(r'(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.', text):
+        if match := re.search(r'(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.?', date_str):
             year, month, day = match.groups()
-            return f"{year}{int(month):02d}{int(day):02d}"
-        elif match := re.search(r'(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일', text):
+            return f"{year}-{int(month):02d}-{int(day):02d}"
+        elif match := re.search(r'(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일', date_str):
             year, month, day = match.groups()
-            return f"{year}{int(month):02d}{int(day):02d}"
-    except:
-        logger.warning(f"⚠️ 날짜를 형식 변환 못했는뎅??")
-    return None
+            return f"{year}-{int(month):02d}-{int(day):02d}"
+        elif match := re.search(r'(\d{4})(\d{2})(\d{2})', date_str):
+            year, month, day = match.groups()
+            return f"{year}-{month}-{day}"
+    except Exception as e:
+        logger.warning(f"⚠️ 날짜 형식 변환 실패: {date_str}, 에러: {e}")
+    return date_str
+
+
+# ---------------------- ⬇️ 설명란의 불필요한 줄바꿈 제거 ----------------------
+def clean_description(text: str) -> str:
+    if not text:
+        return ""
+    # 연속된 줄바꿈을 하나로 통일
+    text = re.sub(r'\n\s*\n', '\n', text)
+    # 앞뒤 공백 제거
+    return text.strip()
 
 
 # ---------------------- ⬇️ 제품 개수 텍스트에서 숫자 추출 (예: 5개 제품) ----------------------
@@ -554,16 +583,27 @@ def save_to_db(data: dict):
                 logger.warning("⚠️ video_id 없음, 저장 불가")
                 return
             
+            # 날짜 형식 변환
+            extracted_date = format_date(data_dict.get("extracted_date", ""))
+            upload_date = format_date(data_dict.get("upload_date", ""))
+            
+            # 구독자 수와 조회수를 정수로 변환
+            subscriber_count = parse_subscriber_count(data_dict.get("subscribers", "0"))
+            view_count = parse_view_count(data_dict.get("view_count", "0"))
+            
+            # 설명란 정리
+            description = clean_description(data_dict.get("description", ""))
+            
             video_data = {
-                "extracted_date": data_dict.get("extracted_date"),
-                "upload_date": data_dict.get("upload_date"),
+                "extracted_date": extracted_date,
+                "upload_date": upload_date,
                 "channel_name": data_dict.get("channel_name"),
-                "subscriber_count": data_dict.get("subscribers"),
+                "subscriber_count": subscriber_count,
                 "title": data_dict.get("title"),
-                "view_count": data_dict.get("view_count"),
+                "view_count": view_count,
                 "video_url": data_dict.get("video_url"),
                 "product_count": data_dict.get("product_count", 0),
-                "description": data_dict.get("description"),
+                "description": description,
             }
 
             video_obj = YouTubeVideo.objects.filter(video_id=video_id).first()
