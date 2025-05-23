@@ -251,14 +251,14 @@ def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
         # 250522 제품 섹션 찾기 (여러 선택자 시도)
         product_sections = []
         selectors = [
-            "ytd-product-metadata-badge-renderer",
             "ytd-merch-shelf-renderer",
+            "ytd-product-metadata-badge-renderer",
             "ytd-product-item-renderer",
             "#product-shelf"
         ]
         
         for selector in selectors:
-            sections = soup.find_all(selector)
+            sections = soup.select(selector)
             if sections:
                 product_sections.extend(sections)
                 logger.info(f"제품 섹션 찾음: {selector}")
@@ -269,22 +269,15 @@ def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
             
         for section in product_sections:
             try:
-                # 제품 이미지 (여러 선택자 시도)
-                image_url = None
-                img_selectors = ["img", "yt-img-shadow img", ".product-image img"]
-                for selector in img_selectors:
-                    img_tag = section.select_one(selector)
-                    if img_tag and (img_url := img_tag.get("src")):
-                        image_url = img_url
-                        break
-                
-                # 250522 제품 이름 (여러 선택자 시도)
+                # 250522제품 이름 (여러 선택자 시도)
                 title = None
                 title_selectors = [
-                    ".product-title", 
-                    "#title",
+                    "span#video-title",
+                    "yt-formatted-string.ytd-merch-product-renderer",
+                    "a#title",
                     "span[id='title']",
-                    "yt-formatted-string.product-title"
+                    "yt-formatted-string.product-title",
+                    ".product-title"
                 ]
                 for selector in title_selectors:
                     if title_elem := section.select_one(selector):
@@ -295,10 +288,10 @@ def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
                 # 250522 제품 가격 (여러 선택자 시도)
                 price = None
                 price_selectors = [
-                    ".price",
-                    "#price",
-                    "span[id='price']",
-                    "yt-formatted-string.price"
+                    "span#price",
+                    "span.price",
+                    "yt-formatted-string#price",
+                    ".ytd-merch-product-renderer-price"
                 ]
                 for selector in price_selectors:
                     if price_elem := section.select_one(selector):
@@ -306,14 +299,28 @@ def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
                             price = price_text
                             break
                 
-                # 250522 제품 링크 (여러 선택자 시도)
+                # 250522제품 이미지(여러 선택자 시도)
+                image_url = None
+                img_selectors = [
+                    "img#img",
+                    "img.ytd-merch-product-renderer-thumbnail",
+                    "yt-img-shadow img",
+                    ".product-image img"
+                ]
+                for selector in img_selectors:
+                    if img_tag := section.select_one(selector):
+                        if src := img_tag.get("src"):
+                            image_url = src
+                            break
+                
+                # 250522 제품 링크(여러 선택자 시도)
                 url = None
                 link_selectors = [
-                    "a.yt-simple-endpoint[href*='redirect']",  # 외부 판매처 리다이렉트 링크
-                    "a[href*='shopping']",  # 쇼핑 관련 링크
-                    "a[target='_blank']",  # 새 창에서 열리는 외부 링크
-                    ".product-link[href]",  # 제품 링크
-                    "a[href]"  # 일반 링크
+                    "a.ytd-merch-product-renderer",
+                    "a[href*='redirect']",
+                    "a[href*='shopping']",
+                    "a[target='_blank']",
+                    ".product-link[href]"
                 ]
                 for selector in link_selectors:
                     if link_elem := section.select_one(selector):
@@ -327,8 +334,6 @@ def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
                                         href = query_params['q']
                                 except:
                                     pass
-                            
-                            # 상대 경로인 경우 전체 URL로 변환
                             url = href if href.startswith("http") else f"https://www.youtube.com{href}"
                             logger.info(f"제품 링크 추출: {url}")
                             break
@@ -346,29 +351,6 @@ def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
                 logger.warning(f"개별 제품 파싱 중 오류: {e}")
                 continue
                 
-        if not products:
-            # 스크립트에서 제품 데이터 찾기
-            for script in soup.find_all("script"):
-                if not script.string:
-                    continue
-                    
-                script_text = script.string
-                if "var productsData" in script_text:
-                    try:
-                        json_text = script_text.split("var productsData = ")[1].split(";</script>")[0]
-                        product_data = json.loads(json_text)
-                        for product in product_data:
-                            products.append({
-                                "title": product.get("title", ""),
-                                "url": product.get("url", ""),
-                                "price": product.get("price", ""),
-                                "imageUrl": product.get("imageUrl", "")
-                            })
-                        logger.info(f"스크립트에서 {len(product_data)}개의 제품 추출")
-                    except Exception as e:
-                        logger.warning(f"스크립트 파싱 중 오류: {e}")
-                    break
-                    
     except Exception as e:
         logger.error(f"❌ 제품 정보 추출 중 오류 발생: {e}")
         
@@ -797,7 +779,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     channel_urls = [
-        "https://www.youtube.com/@ChimChakMan_Official",
+        "https://www.youtube.com/@%EC%B9%A1%EC%B4%89",
     ]
     
     export_dir = "exports"
