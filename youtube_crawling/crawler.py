@@ -406,24 +406,29 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                             "ytd-thumbnail.ytd-merch-shelf-renderer img"
                         ]
                         
+                        # 이미지 URL 찾기 시도
                         for selector in img_selectors:
-                            if img_elem := item.select_one(selector):
-                                logger.info(f"이미지 선택자 '{selector}' 매칭됨")
-                                # 이미지 요소의 모든 속성 출력
-                                logger.info(f"이미지 요소 속성들: {img_elem.attrs}")
+                            try:
+                                # JavaScript 실행 후 이미지 요소 찾기
+                                img_elem = WebDriverWait(driver, 5).until(
+                                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                                )
                                 
-                                # 여러 속성에서 이미지 URL 찾기
-                                src = (img_elem.get("src") or 
-                                      img_elem.get("data-thumb") or 
-                                      img_elem.get("data-src") or
-                                      img_elem.get("srcset") or  # srcset 속성 추가
-                                      img_elem.get("loading-background") or  # loading-background 속성 추가
-                                      img_elem.parent.get("loading-background"))  # 부모 요소의 loading-background도 확인
+                                # 이미지 URL 찾기 시도
+                                src = (img_elem.get_attribute("src") or 
+                                      img_elem.get_attribute("data-thumb") or 
+                                      img_elem.get_attribute("data-src") or
+                                      img_elem.get_attribute("srcset") or
+                                      img_elem.get_attribute("loading-background"))
                                 
-                                if not src and "style" in img_elem.attrs:  # style 속성에서 background-image URL 추출 시도
-                                    style = img_elem["style"]
-                                    if "background-image" in style:
-                                        url_match = re.search(r'url\(["\']?(.*?)["\']?\)', style)
+                                if not src:
+                                    # 부모 요소에서도 확인
+                                    parent = img_elem.find_element(By.XPATH, "..")
+                                    src = (parent.get_attribute("loading-background") or
+                                          parent.get_attribute("style"))
+                                    
+                                    if src and "background-image" in src:
+                                        url_match = re.search(r'url\(["\']?(.*?)["\']?\)', src)
                                         if url_match:
                                             src = url_match.group(1)
                                 
@@ -444,9 +449,9 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                                     product_info["imageUrl"] = src
                                     logger.info(f"최종 이미지 URL: {product_info['imageUrl']}")
                                     break
-                                else:
-                                    logger.warning("이미지 URL을 찾을 수 없습니다.")
-                                    product_info["imageUrl"] = ""
+                            except Exception as e:
+                                logger.debug(f"이미지 선택자 '{selector}' 처리 중 에러: {e}")
+                                continue
 
                         # 판매처
                         merchant_selectors = [
