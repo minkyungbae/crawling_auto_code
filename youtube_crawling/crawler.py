@@ -245,19 +245,25 @@ def click_description(driver) -> str:
     
     
 #--------------------------------------- 제품 정보 추출 -------------------------------------
-def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
+def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
     products = []
     try:
         # 250522 제품 섹션 찾기 (여러 선택자 시도)
         product_sections = []
-        selectors = [
+        section_selectors = [
             "ytd-merch-shelf-renderer",
             "ytd-product-metadata-badge-renderer",
             "ytd-product-item-renderer",
-            "#product-shelf"
+            "#product-shelf",
+            "#items.ytd-merch-shelf-renderer",
+            "ytd-merch-shelf-item-renderer",
+            "#content ytd-metadata-row-container-renderer",
+            "#product-list",
+            ".product-list",
+            ".product-shelf"
         ]
         
-        for selector in selectors:
+        for selector in section_selectors:
             sections = soup.select(selector)
             if sections:
                 product_sections.extend(sections)
@@ -266,90 +272,171 @@ def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
         if not product_sections:
             logger.warning("제품 섹션을 찾을 수 없습니다.")
             return products
-            
-        for section in product_sections:
-            try:
-                # 250522제품 이름 (여러 선택자 시도)
-                title = None
-                title_selectors = [
-                    "span#video-title",
-                    "yt-formatted-string.ytd-merch-product-renderer",
-                    "a#title",
-                    "span[id='title']",
-                    "yt-formatted-string.product-title",
-                    ".product-title"
-                ]
-                for selector in title_selectors:
-                    if title_elem := section.select_one(selector):
-                        if title_text := title_elem.get_text(strip=True):
-                            title = title_text
-                            break
-                
-                # 250522 제품 가격 (여러 선택자 시도)
-                price = None
-                price_selectors = [
-                    "span#price",
-                    "span.price",
-                    "yt-formatted-string#price",
-                    ".ytd-merch-product-renderer-price"
-                ]
-                for selector in price_selectors:
-                    if price_elem := section.select_one(selector):
-                        if price_text := price_elem.get_text(strip=True):
-                            price = price_text
-                            break
-                
-                # 250522제품 이미지(여러 선택자 시도)
-                image_url = None
-                img_selectors = [
-                    "img#img",
-                    "img.ytd-merch-product-renderer-thumbnail",
-                    "yt-img-shadow img",
-                    ".product-image img"
-                ]
-                for selector in img_selectors:
-                    if img_tag := section.select_one(selector):
-                        if src := img_tag.get("src"):
-                            image_url = src
-                            break
-                
-                # 250522 제품 링크(여러 선택자 시도)
-                url = None
-                link_selectors = [
-                    "a.ytd-merch-product-renderer",
-                    "a[href*='redirect']",
-                    "a[href*='shopping']",
-                    "a[target='_blank']",
-                    ".product-link[href]"
-                ]
-                for selector in link_selectors:
-                    if link_elem := section.select_one(selector):
-                        if href := link_elem.get("href"):
-                            # YouTube 리다이렉트 URL에서 실제 URL 추출
-                            if "redirect" in href:
-                                try:
-                                    parsed = urlparse(href)
-                                    query_params = dict(parse_qsl(parsed.query))
-                                    if 'q' in query_params:  # 실제 URL은 'q' 파라미터에 있음
-                                        href = query_params['q']
-                                except:
-                                    pass
-                            url = href if href.startswith("http") else f"https://www.youtube.com{href}"
-                            logger.info(f"제품 링크 추출: {url}")
-                            break
-                
-                if title:  # 최소한 제품명은 있어야 함
-                    products.append({
-                        "title": title,
-                        "url": url or "",
-                        "price": price or "",
-                        "imageUrl": image_url or ""
-                    })
-                    logger.info(f"제품 추출 성공: {title}")
-                
-            except Exception as e:
-                logger.warning(f"개별 제품 파싱 중 오류: {e}")
-                continue
+
+        # 오른쪽 화살표 버튼이 있는지 확인하고 클릭
+        right_arrow_selectors = [
+            "#right-arrow-container",
+            "#right-arrow",
+            "div.arrow.center-aligned",
+            "yt-icon[icon='yt-icons:chevron_right']",
+            ".arrow.style-scope.ytd-merch-shelf-renderer",
+            "#navigation-buttons button[aria-label*='다음']",
+            "#navigation-buttons button[aria-label*='Next']"
+        ]
+
+        max_clicks = 10  # 무한 루프 방지
+        clicks = 0
+        
+        while clicks < max_clicks:
+            # 현재 보이는 모든 제품 정보 추출
+            for section in product_sections:
+                try:
+                    # 제품 아이템 찾기
+                    item_selectors = [
+                        "ytd-merch-shelf-item-renderer",
+                        ".product-item",
+                        ".ytd-merch-product-renderer",
+                        "ytd-product-item-renderer",
+                        ".product-shelf-item"
+                    ]
+                    
+                    items = []
+                    for selector in item_selectors:
+                        items.extend(section.select(selector))
+                    
+                    for item in items:
+                        product_info = {}
+                        
+                        # 제품 링크 및 기본 정보
+                        link_selectors = [
+                            "a.yt-simple-endpoint",
+                            "a[href*='redirect']",
+                            "a[href*='shopping']",
+                            "a[target='_blank']",
+                            ".product-link",
+                            ".ytd-merch-product-renderer a",
+                            "a.product-item-link"
+                        ]
+                        
+                        for selector in link_selectors:
+                            if link_elem := item.select_one(selector):
+                                if href := link_elem.get("href"):
+                                    if "redirect" in href:
+                                        try:
+                                            parsed = urlparse(href)
+                                            query_params = dict(parse_qsl(parsed.query))
+                                            if 'q' in query_params:
+                                                href = query_params['q']
+                                        except:
+                                            pass
+                                    product_info["url"] = href if href.startswith("http") else f"https://www.youtube.com{href}"
+                                    break
+
+                        # 제품명
+                        title_selectors = [
+                            ".product-item-title",
+                            "span#video-title",
+                            "yt-formatted-string.ytd-merch-product-renderer",
+                            "a#title",
+                            "span[id='title']",
+                            ".product-title",
+                            ".ytd-merch-product-renderer-title",
+                            "div[class*='title']",
+                            ".small-item-hide.product-item-title"
+                        ]
+                        
+                        for selector in title_selectors:
+                            if title_elem := item.select_one(selector):
+                                if title_text := title_elem.get_text(strip=True):
+                                    product_info["title"] = title_text
+                                    break
+
+                        # 가격
+                        price_selectors = [
+                            ".product-item-price",
+                            "span#price",
+                            "span.price",
+                            "yt-formatted-string#price",
+                            ".ytd-merch-product-renderer-price",
+                            ".product-price",
+                            ".product-item-price-wrapper .product-item-price",
+                            "div[class*='price']"
+                        ]
+                        
+                        for selector in price_selectors:
+                            if price_elem := item.select_one(selector):
+                                if price_text := price_elem.get_text(strip=True):
+                                    product_info["price"] = price_text
+                                    break
+
+                        # 이미지 URL
+                        img_selectors = [
+                            "img#img",
+                            "img.ytd-merch-product-renderer-thumbnail",
+                            "yt-img-shadow img",
+                            ".product-image img",
+                            ".product-item-image img",
+                            "img[class*='product']",
+                            "img[alt]",
+                            ".style-scope.yt-img-shadow"
+                        ]
+                        
+                        for selector in img_selectors:
+                            if img_elem := item.select_one(selector):
+                                if src := img_elem.get("src"):
+                                    product_info["imageUrl"] = src
+                                    break
+                                elif src := img_elem.get("data-src"):  # 지연 로딩된 이미지
+                                    product_info["imageUrl"] = src
+                                    break
+
+                        # 판매처
+                        merchant_selectors = [
+                            ".product-item-merchant-text",
+                            ".product-merchant",
+                            ".merchant-name",
+                            "div[class*='merchant']",
+                            ".product-item-merchant div",
+                            ".product-item-merchant-text:first-child"
+                        ]
+                        
+                        for selector in merchant_selectors:
+                            if merchant_elem := item.select_one(selector):
+                                if merchant_text := merchant_elem.get_text(strip=True):
+                                    product_info["merchant"] = merchant_text.replace("!", "").strip()
+                                    break
+
+                        if product_info.get("title"):  # 최소한 제품명은 있어야 함
+                            if product_info not in products:  # 중복 제품 방지
+                                products.append(product_info)
+                                logger.info(f"제품 추출 성공: {product_info['title']}")
+
+                except Exception as e:
+                    logger.warning(f"개별 제품 파싱 중 오류: {e}")
+                    continue
+
+            # 다음 제품을 보기 위해 오른쪽 화살표 클릭 시도
+            arrow_clicked = False
+            for selector in right_arrow_selectors:
+                try:
+                    arrow = WebDriverWait(driver, 3).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                    )
+                    driver.execute_script("arguments[0].click();", arrow)
+                    logger.info("오른쪽 화살표 클릭 성공")
+                    arrow_clicked = True
+                    time.sleep(2)  # 새로운 제품이 로드될 때까지 대기
+                    break
+                except:
+                    continue
+
+            if not arrow_clicked:
+                logger.info("더 이상 표시할 제품이 없습니다")
+                break
+
+            clicks += 1
+            # 페이지 소스 업데이트
+            soup = BeautifulSoup(driver.page_source, "html.parser")
                 
     except Exception as e:
         logger.error(f"❌ 제품 정보 추출 중 오류 발생: {e}")
@@ -514,7 +601,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         logger.info(f"설명 길이: {len(description)} 글자")
 
         # 250522 제품 추출
-        products = extract_products_from_dom(soup)
+        products = extract_products_from_dom(driver, soup)
         product_count = len(products)
 
         # 기본 데이터 세트
@@ -538,7 +625,8 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                     "product_name": product.get("title", ""),
                     "product_price": product.get("price", ""),
                     "product_image_url": product.get("imageUrl", ""),
-                    "product_url": product.get("url", "")
+                    "product_url": product.get("url", ""),
+                    "product_merchant": product.get("merchant", "")
                 }
                 base_data.append(row_data)
         else:
@@ -557,7 +645,8 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 "product_name": "",
                 "product_price": "",
                 "product_image_url": "",
-                "product_url": ""
+                "product_url": "",
+                "product_merchant": ""
             })
 
         logger.info(f"✅ 영상 정보 및 제품 {product_count}개 수집 완료")
@@ -724,7 +813,8 @@ def save_to_db(data: pd.DataFrame):
                         product_name=row.get("product_name", ""),
                         product_price=row.get("product_price", ""),
                         product_image_link=row.get("product_image_url", ""),
-                        product_link=row.get("product_url", "")
+                        product_link=row.get("product_url", ""),
+                        product_merchant=row.get("product_merchant", "")
                     )
                     logger.info(f"✅ 제품 정보 저장 완료 (video_id: {video_id})")
                 else:
@@ -734,7 +824,8 @@ def save_to_db(data: pd.DataFrame):
                         product_name="",
                         product_price="",
                         product_image_link="",
-                        product_link=""
+                        product_link="",
+                        product_merchant=""
                     )
                     logger.info(f"⚠️ 제품 없는 채로 정보 저장 완료 (video_id: {video_id})")
                 saved_count += 1
