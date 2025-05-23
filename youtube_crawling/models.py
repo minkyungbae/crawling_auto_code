@@ -17,11 +17,12 @@ class YouTubeVideo(models.Model):
 
 
 class YouTubeProduct(models.Model):
-    video = models.ForeignKey(YouTubeVideo, related_name='products', on_delete=models.CASCADE)
-    product_image_link = models.URLField(null=True, blank=True)
-    product_name = models.CharField(max_length=255, null=True, blank=True)
-    product_price = models.CharField(max_length=100, null=True, blank=True)
-    product_link = models.URLField(null=True, blank=True)
+    video = models.ForeignKey(YouTubeVideo, on_delete=models.CASCADE, related_name='products')
+    product_name = models.CharField(max_length=500, blank=True)
+    product_price = models.CharField(max_length=100, blank=True)
+    product_image_link = models.URLField(max_length=1000, blank=True)
+    product_link = models.URLField(max_length=1000, blank=True)
+    product_merchant = models.CharField(max_length=100, blank=True)
 
     def __str__(self):
-        return self.product_name
+        return f"{self.product_name} ({self.product_price})"
