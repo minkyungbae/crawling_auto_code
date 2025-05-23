@@ -536,22 +536,50 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         product_count = len(products)
 
         # 기본 데이터 세트
-        base_data = {
-            "youtube_id": video_id,
-            "title": title,
-            "channel_name": channel_name,
-            "subscribers": subscriber_count,
-            "view_count": view_count,
-            "upload_date": upload_date,
-            "extracted_date": today_str,
-            "video_url": video_url,
-            "description": description,
-            "product_count": product_count,
-            "products": json.dumps(products)  # 제품 정보를 JSON 문자열로 저장
-        }
+        base_data = []
+        
+        # 250523
+        if products:
+            # 각 제품별로 row 생성
+            for product in products:
+                row_data = {
+                    "youtube_id": video_id,
+                    "title": title,
+                    "channel_name": channel_name,
+                    "subscribers": subscriber_count,
+                    "view_count": view_count,
+                    "upload_date": upload_date,
+                    "extracted_date": today_str,
+                    "video_url": video_url,
+                    "description": description,
+                    "product_count": product_count,
+                    "product_name": product.get("title", ""),
+                    "product_price": product.get("price", ""),
+                    "product_image_url": product.get("imageUrl", ""),
+                    "product_url": product.get("url", "")
+                }
+                base_data.append(row_data)
+        else:
+            # 제품이 없는 경우 기본 정보만 저장
+            base_data.append({
+                "youtube_id": video_id,
+                "title": title,
+                "channel_name": channel_name,
+                "subscribers": subscriber_count,
+                "view_count": view_count,
+                "upload_date": upload_date,
+                "extracted_date": today_str,
+                "video_url": video_url,
+                "description": description,
+                "product_count": 0,
+                "product_name": "",
+                "product_price": "",
+                "product_image_url": "",
+                "product_url": ""
+            })
 
         logger.info(f"✅ 영상 정보 및 제품 {product_count}개 수집 완료")
-        return pd.DataFrame([base_data])
+        return pd.DataFrame(base_data)
     
     except Exception as e:
         logger.error(f"❌ base_youtube_info 예외: {e}", exc_info=True)
@@ -707,33 +735,27 @@ def save_to_db(data: pd.DataFrame):
                     }
                 )
 
-                # 제품 정보 처리
-                try:
-                    # products 컬럼에서 JSON 문자열을 파싱
-                    products = json.loads(row.get("products", "[]"))
-                    
-                    # 기존 제품 정보 삭제
-                    YouTubeProduct.objects.filter(video=video_obj).delete()
-                    
-                    # 새로운 제품 정보 저장
-                    for product in products:
-                        if not product.get("title"):  # 제품명이 없으면 건너뛰기
-                            continue
-                        
-                        YouTubeProduct.objects.create(
-                            video=video_obj,
-                            product_name=product.get("title", ""),
-                            product_price=product.get("price", ""),
-                            product_image_link=product.get("imageUrl", ""),
-                            product_link=product.get("url", "")
-                        )
-                    logger.info(f"✅ {len(products)}개의 제품 정보 저장 완료 (video_id: {video_id})")
-                    saved_count += 1
-                    
-                except json.JSONDecodeError:
-                    logger.error(f"❌ 제품 정보 JSON 파싱 실패 (video_id: {video_id})")
-                except Exception as e:
-                    logger.error(f"❌ 제품 정보 저장 실패 (video_id: {video_id}): {e}")
+                # 250523 제품 정보가 있는 경우에만 저장
+                if row.get("product_name"):
+                    YouTubeProduct.objects.create(
+                        video=video_obj,
+                        product_name=row.get("product_name", ""),
+                        product_price=row.get("product_price", ""),
+                        product_image_link=row.get("product_image_url", ""),
+                        product_link=row.get("product_url", "")
+                    )
+                    logger.info(f"✅ 제품 정보 저장 완료 (video_id: {video_id})")
+                else:
+                    # 250523 제품이 없는 경우도 빈 값으로 저장
+                    YouTubeProduct.objects.create(
+                        video=video_obj,
+                        product_name="",
+                        product_price="",
+                        product_image_link="",
+                        product_link=""
+                    )
+                    logger.info(f"⚠️ 제품 없는 채로 정보 저장 완료 (video_id: {video_id})")
+                saved_count += 1
 
     except Exception as e:
         logger.error(f"❌ DB 저장 중 에러 발생: {e}")
@@ -775,7 +797,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     channel_urls = [
-        "https://www.youtube.com/@li2py",
+        "https://www.youtube.com/@ChimChakMan_Official",
     ]
     
     export_dir = "exports"
