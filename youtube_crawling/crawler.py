@@ -454,8 +454,18 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
 
                     # 필수 정보가 있는 경우에만 제품 목록에 추가
                     if "title" in product_info and "imageUrl" in product_info:
-                        products.append(product_info)
-                        logger.info(f"✅ 제품 정보 추출 완료: {product_info['title']}")
+                        # 중복 체크: 동일한 제품명과 URL을 가진 제품이 이미 있는지 확인
+                        is_duplicate = False
+                        for existing_product in products:
+                            if (existing_product.get("title") == product_info["title"] and 
+                                existing_product.get("url") == product_info.get("url")):
+                                is_duplicate = True
+                                logger.warning(f"⚠️ 중복된 제품 발견: {product_info['title']}, 건너뜁니다.")
+                                break
+                        
+                        if not is_duplicate:
+                            products.append(product_info)
+                            logger.info(f"✅ 제품 정보 추출 완료: {product_info['title']}")
                     else:
                         logger.warning("⚠️ 필수 정보(제품명 또는 이미지 URL)가 없어 제품을 추가하지 않습니다")
 
