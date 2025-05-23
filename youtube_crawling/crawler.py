@@ -410,45 +410,46 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                         for selector in img_selectors:
                             try:
                                 # JavaScript 실행 후 이미지 요소 찾기
-                                img_elem = WebDriverWait(driver, 5).until(
-                                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                                )
+                                img_elements = driver.find_elements(By.CSS_SELECTOR, selector)
                                 
-                                # 이미지 URL 찾기 시도
-                                src = (img_elem.get_attribute("src") or 
-                                      img_elem.get_attribute("data-thumb") or 
-                                      img_elem.get_attribute("data-src") or
-                                      img_elem.get_attribute("srcset") or
-                                      img_elem.get_attribute("loading-background"))
-                                
-                                if not src:
-                                    # 부모 요소에서도 확인
-                                    parent = img_elem.find_element(By.XPATH, "..")
-                                    src = (parent.get_attribute("loading-background") or
-                                          parent.get_attribute("style"))
-                                    
-                                    if src and "background-image" in src:
-                                        url_match = re.search(r'url\(["\']?(.*?)["\']?\)', src)
-                                        if url_match:
-                                            src = url_match.group(1)
-                                
-                                if src:
-                                    logger.info(f"원본 이미지 URL: {src}")
-                                    # 상대 URL을 절대 URL로 변환
-                                    if src.startswith("//"):
-                                        src = f"https:{src}"
-                                    elif not src.startswith(("http://", "https://")):
-                                        src = f"https://www.youtube.com{src}"
-                                    
-                                    # 이미지 크기를 256으로 조정
-                                    if "=" in src:
-                                        src = re.sub(r'=w\d+(-h\d+)?', '=w256-h256', src)
-                                    else:
-                                        src = f"{src}=w256-h256"
-                                    
-                                    product_info["imageUrl"] = src
-                                    logger.info(f"최종 이미지 URL: {product_info['imageUrl']}")
-                                    break
+                                for img_elem in img_elements:
+                                    try:
+                                        # 이미지의 부모 요소들을 확인하여 제품 관련 컨테이너인지 확인
+                                        parent = img_elem
+                                        for _ in range(5):  # 최대 5단계 상위까지 확인
+                                            parent = parent.find_element(By.XPATH, "..")
+                                            parent_class = parent.get_attribute("class") or ""
+                                            
+                                            # 제품 관련 클래스가 있는지 확인
+                                            if any(keyword in parent_class.lower() for keyword in ["product", "merch", "item"]):
+                                                # 이미지 URL 찾기 시도
+                                                src = (img_elem.get_attribute("src") or 
+                                                      img_elem.get_attribute("data-thumb") or 
+                                                      img_elem.get_attribute("data-src") or
+                                                      img_elem.get_attribute("srcset"))
+                                                
+                                                if src:
+                                                    # 채널 프로필 이미지 필터링
+                                                    if not any(keyword in src.lower() for keyword in ["avatar", "profile", "channel"]):
+                                                        logger.info(f"원본 이미지 URL: {src}")
+                                                        
+                                                        # 상대 URL을 절대 URL로 변환
+                                                        if src.startswith("//"):
+                                                            src = f"https:{src}"
+                                                        elif not src.startswith(("http://", "https://")):
+                                                            src = f"https://www.youtube.com{src}"
+                                                        
+                                                        # 이미지 크기를 256으로 조정
+                                                        if "=" in src:
+                                                            src = re.sub(r'=w\d+(-h\d+)?', '=w256-h256', src)
+                                                        else:
+                                                            src = f"{src}=w256-h256"
+                                                        
+                                                        product_info["imageUrl"] = src
+                                                        logger.info(f"최종 이미지 URL: {product_info['imageUrl']}")
+                                                        return  # 적절한 이미지를 찾았으면 종료
+                                    except Exception as e:
+                                        continue
                             except Exception as e:
                                 logger.debug(f"이미지 선택자 '{selector}' 처리 중 에러: {e}")
                                 continue
