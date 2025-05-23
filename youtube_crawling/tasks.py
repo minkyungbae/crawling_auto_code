@@ -7,7 +7,6 @@ logger = logging.getLogger(__name__)
 @shared_task
 def crawl_channels_task():
     channel_urls = [
-        "https://www.youtube.com/@yegulyegul8256",
         "https://www.youtube.com/@%EC%B9%A1%EC%B4%89",
     ]
     export_dir = "exports"
