@@ -420,9 +420,18 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                                     elif not src.startswith(("http://", "https://")):
                                         src = f"https://www.youtube.com{src}"
                                     
+                                    # 이미지 크기를 256으로 조정
+                                    if "=" in src:
+                                        src = re.sub(r'=w\d+(-h\d+)?', '=w256-h256', src)
+                                    else:
+                                        src = f"{src}=w256-h256"
+                                    
                                     product_info["imageUrl"] = src
                                     logger.info(f"최종 이미지 URL: {product_info['imageUrl']}")
                                     break
+                                else:
+                                    logger.warning("이미지 URL을 찾을 수 없습니다.")
+                                    product_info["imageUrl"] = ""
 
                         # 판매처
                         merchant_selectors = [
@@ -840,34 +849,25 @@ def save_to_db(data: pd.DataFrame):
                     }
                 )
 
-                # 250523 제품 정보가 있는 경우에만 저장
-                if row.get("product_name"):
-                    YouTubeProduct.objects.create(
+                # 250523제품 정보가 있는 경우에만 저장
+                product_name = row.get("product_name")
+                if product_name and pd.notna(product_name) and product_name.strip():
+                    product = YouTubeProduct.objects.create(
                         video=video_obj,
-                        product_name=row.get("product_name", ""),
+                        product_name=product_name,
                         product_price=row.get("product_price", ""),
                         product_image_link=row.get("product_image_url", ""),
                         product_link=row.get("product_url", ""),
                         product_merchant=row.get("product_merchant", "")
                     )
-                    logger.info(f"✅ 제품 정보 저장 완료 (video_id: {video_id})")
-                else:
-                    # 250523 제품이 없는 경우도 빈 값으로 저장
-                    YouTubeProduct.objects.create(
-                        video=video_obj,
-                        product_name="",
-                        product_price="",
-                        product_image_link="",
-                        product_link="",
-                        product_merchant=""
-                    )
-                    logger.info(f"⚠️ 제품 없는 채로 정보 저장 완료 (video_id: {video_id})")
-                saved_count += 1
+                    logger.info(f"✅ 제품 정보 저장 완료: {product_name} (video_id: {video_id})")
+                    saved_count += 1
 
     except Exception as e:
-        logger.error(f"❌ DB 저장 중 에러 발생: {e}")
+        logger.error(f"❌ DB 저장 중 에러 발생: {e}", exc_info=True)
         return 0
 
+    logger.info(f"총 {saved_count}개의 제품 정보가 저장되었습니다.")
     return saved_count
 
 # ------------------------------------- ⬇️ 유튜브 채널의 전체 크롤링을 실행하는 함수 ------------------------------
