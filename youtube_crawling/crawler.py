@@ -309,7 +309,7 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                         img_url = (
                             img_elem.get("src") or 
                             img_elem.get("data-src") or 
-                            img_elem.get("srcset", "").split()[0]  # srcset이 있는 경우 첫 번째 URL 사용
+                            img_elem.get("srcset", "").split()[0] if img_elem.get("srcset") else None  # srcset이 있는 경우만 split
                         )
                         if img_url:
                             product_info["imageUrl"] = img_url
@@ -317,6 +317,7 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                             break
 
                 if not img_url:
+                    product_info["imageUrl"] = ""  # 이미지 URL이 없는 경우 빈 문자열로 설정
                     logger.warning(f"⚠️ 제품 이미지를 찾을 수 없습니다: {product_info.get('title', '제품명 없음')}")
 
                 # 5. 판매처 추출
@@ -672,8 +673,10 @@ def save_to_db(data: pd.DataFrame):
     
     try:
         with transaction.atomic():
-            # DataFrame의 각 행을 처리
-            for _, row in data.iterrows():
+            # 각 고유한 video_id에 대해 한 번만 처리
+            unique_videos = data.drop_duplicates(subset=['youtube_id'])
+            
+            for _, row in unique_videos.iterrows():
                 video_id = row.get("youtube_id")
                 if not video_id:
                     logger.warning("⚠️ video_id 없음, 건너뜁니다")
@@ -690,72 +693,48 @@ def save_to_db(data: pd.DataFrame):
                 # 설명란 정리
                 description = clean_description(row.get("description", ""))
 
-                try:
-                    # 기존 영상이 있는지 확인
-                    video_obj = YouTubeVideo.objects.get(video_id=video_id)
-                    logger.info(f"🔄 기존 영상 발견: {video_id}, 정보를 업데이트합니다.")
-                    
-                    # 기존 영상 정보 업데이트
-                    video_obj.extracted_date = extracted_date
-                    video_obj.upload_date = upload_date
-                    video_obj.channel_name = row.get("channel_name")
-                    video_obj.subscriber_count = subscriber_count
-                    video_obj.title = row.get("title")
-                    video_obj.view_count = view_count
-                    video_obj.video_url = row.get("video_url")
-                    video_obj.product_count = row.get("product_count", 0)
-                    video_obj.description = description
-                    video_obj.save()
-                    
-                    # 기존 제품 정보 삭제
-                    video_obj.products.all().delete()
-                    updated_count += 1
-                    
-                except YouTubeVideo.DoesNotExist:
-                    # 새로운 영상 생성
-                    video_obj = YouTubeVideo.objects.create(
-                        video_id=video_id,
-                        extracted_date=extracted_date,
-                        upload_date=upload_date,
-                        channel_name=row.get("channel_name"),
-                        subscriber_count=subscriber_count,
-                        title=row.get("title"),
-                        view_count=view_count,
-                        video_url=row.get("video_url"),
-                        product_count=row.get("product_count", 0),
-                        description=description,
-                    )
-                    logger.info(f"✨ 새로운 영상 생성: {video_id}")
+                # 영상 정보 생성 또는 업데이트
+                video_obj, created = YouTubeVideo.objects.update_or_create(
+                    video_id=video_id,
+                    defaults={
+                        "extracted_date": extracted_date,
+                        "upload_date": upload_date,
+                        "channel_name": row.get("channel_name"),
+                        "subscriber_count": subscriber_count,
+                        "title": row.get("title"),
+                        "view_count": view_count,
+                        "video_url": row.get("video_url"),
+                        "product_count": row.get("product_count", 0),
+                        "description": description,
+                    }
+                )
 
-                # 250523제품 정보가 있는 경우에만 저장
-                product_name = row.get("product_name")
-                if product_name and pd.notna(product_name) and product_name.strip():
-                    # 제품 정보가 이미 존재하는지 확인
-                    existing_product = YouTubeProduct.objects.filter(
-                        video=video_obj,
-                        product_name=product_name,
-                        product_link=row.get("product_url", "")
-                    ).first()
-                    
-                    if existing_product:
-                        # 기존 제품 정보 업데이트
-                        existing_product.product_price = row.get("product_price", "")
-                        existing_product.product_image_link = row.get("product_image_url", "")
-                        existing_product.product_merchant = row.get("product_merchant", "")
-                        existing_product.save()
-                        logger.info(f"🔄 제품 정보 업데이트: {product_name}")
-                    else:
-                        # 새로운 제품 생성
-                        YouTubeProduct.objects.create(
+                if created:
+                    logger.info(f"✨ 새로운 영상 생성: {video_id}")
+                else:
+                    logger.info(f"🔄 기존 영상 업데이트: {video_id}")
+                    updated_count += 1
+
+                # 해당 video_id를 가진 모든 제품 정보 처리
+                video_products = data[data['youtube_id'] == video_id]
+                
+                # 기존 제품 정보 삭제
+                video_obj.products.all().delete()
+                
+                # 새로운 제품 정보 저장
+                for _, product_row in video_products.iterrows():
+                    product_name = product_row.get("product_name")
+                    if product_name and pd.notna(product_name) and product_name.strip():
+                        product = YouTubeProduct.objects.create(
                             video=video_obj,
                             product_name=product_name,
-                            product_price=row.get("product_price", ""),
-                            product_image_link=row.get("product_image_url", ""),
-                            product_link=row.get("product_url", ""),
-                            product_merchant=row.get("product_merchant", "")
+                            product_price=product_row.get("product_price", ""),
+                            product_image_link=product_row.get("product_image_url", ""),
+                            product_link=product_row.get("product_url", ""),
+                            product_merchant=product_row.get("product_merchant", "")
                         )
-                        logger.info(f"✨ 새로운 제품 정보 저장: {product_name}")
                         saved_count += 1
+                        logger.info(f"✨ 제품 정보 저장: {product_name}")
 
     except Exception as e:
         logger.error(f"❌ DB 저장 중 에러 발생: {e}", exc_info=True)
