@@ -18,10 +18,7 @@ from typing import List, Union, Dict, Optional
 from urllib.parse import urlparse, unquote, parse_qsl
 from slugify import slugify
 import pandas as pd
-import logging, time, re, json, os, urllib.parse, multiprocessing
-from concurrent.futures import ThreadPoolExecutor
-from functools import partial
-
+import logging, time, re, json, os, urllib.parse
 
 
 # ----------------------------- ⬇️ logging 설정 -----------------------------
@@ -32,15 +29,15 @@ logger = logging.getLogger(__name__)  # logger.info(), logger.warning()만 써�
 @contextmanager
 def create_driver():
     options = webdriver.ChromeOptions()
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--disable-infobars")
-    options.add_argument("--start-maximized")
-    options.add_argument("--disable-notifications")
-    options.add_argument('--ignore-certificate-errors')
-    options.add_argument('--ignore-ssl-errors')
+    options.add_argument("--no-sandbox")           # 샌드박스 비활성화 (보안 기능 해제)
+    options.add_argument("--disable-dev-shm-usage")# 공유 메모리 사용 비활성화
+    options.add_argument("--disable-gpu")          # GPU 하드웨어 가속 비활성화
+    options.add_argument("--disable-extensions")   # 크롬 확장 프로그램 비활성화
+    options.add_argument("--disable-infobars")     # 정보 표시줄 비활성화
+    options.add_argument("--start-maximized")      # 브라우저 최대화
+    options.add_argument("--disable-notifications")# 알림 비활성화
+    options.add_argument('--ignore-certificate-errors')  # 인증서 오류 무시
+    options.add_argument('--ignore-ssl-errors')    # SSL 오류 무시
     # User-Agent 설정
     options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36')
     
@@ -78,7 +75,7 @@ def get_all_video_ids(driver, channel_url):
     try:
         videos_url = channel_url.rstrip('/') + "/videos"
         driver.get(videos_url)
-        time.sleep(5)  # 페이지 로딩을 위한 대기 시간 증가
+        time.sleep(3)  # 페이지 로딩을 위한 대기 시간 증가
 
         video_urls = set()
         last_height = driver.execute_script("return document.documentElement.scrollHeight")
@@ -386,12 +383,15 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
 
     try:
         driver.get(video_url)
-        # 페이지 로딩 최적화
-        wait = WebDriverWait(driver, 10)  # 20초에서 10초로 단축
+        # 페이지 로딩 대기 시간
+        time.sleep(3)
         
-        # 스크롤 최적화 - 한 번에 더 많이 스크롤
-        driver.execute_script("window.scrollTo(0, 1000);")
-        time.sleep(1)  # 5초에서 1초로 단축
+        # 페이지 스크롤을 여러 번 수행하여 동적 컨텐츠 로드
+        for _ in range(3):
+            driver.execute_script("window.scrollTo(0, window.scrollY + 500);")
+            time.sleep(2)
+        
+        wait = WebDriverWait(driver, 20)
         
         # 250523 더보기 버튼 클릭 시도 (여러 셀렉터 시도)
         expand_button_selectors = [
@@ -409,7 +409,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 more_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, selector)))
                 driver.execute_script("arguments[0].click();", more_button)
                 logger.info(f"더보기 버튼 클릭 성공: {selector}")
-                time.sleep(1)  # 더보기 클릭 후 컨텐츠 로드 대기
+                time.sleep(3)  # 더보기 클릭 후 컨텐츠 로드 대기
                 break
             except:
                 continue
@@ -742,54 +742,29 @@ def save_to_db(data: pd.DataFrame):
     return saved_count
 
 # ------------------------------------- ⬇️ 유튜브 채널의 전체 크롤링을 실행하는 함수 ------------------------------
-def crawl_video_batch(video_ids: List[str], start_idx: int, total: int) -> List[pd.DataFrame]:
-    results = []
-    with create_driver() as driver:
-        for i, video_id in enumerate(video_ids, start=start_idx):
-            try:
-                df = collect_video_data(driver, video_id, i, total)
-                if df is not None and not df.empty:
-                    results.append(df)
-            except Exception as e:
-                logger.error(f"❌ 영상 크롤링 중 에러 발생: {video_id}, 에러: {e}", exc_info=True)
-    return results
-
 def crawl_channel_videos(channel_url: str, save_path: str):
     with create_driver() as driver:
         video_ids = get_all_video_ids(driver, channel_url)
-        
+
         total = len(video_ids)
         if total == 0:
             logger.warning("❌ 채널에서 수집된 영상 ID가 없습니다.")
             return
-            
+        
         logger.info(f"총 {total}개 영상 크롤링 시작")
-        
-        # CPU 코어 수에 따른 최적의 배치 크기 계산
-        num_cores = multiprocessing.cpu_count()
-        batch_size = max(1, total // num_cores)
-        
-        # 비디오 ID를 배치로 나누기
-        video_batches = [video_ids[i:i + batch_size] for i in range(0, len(video_ids), batch_size)]
-        
-        all_data = []
-        # ThreadPoolExecutor를 사용한 병렬 처리
-        with ThreadPoolExecutor(max_workers=num_cores) as executor:
-            futures = []
-            for i, batch in enumerate(video_batches):
-                start_idx = i * batch_size + 1
-                future = executor.submit(crawl_video_batch, batch, start_idx, total)
-                futures.append(future)
-            
-            # 결과 수집
-            for future in futures:
-                batch_results = future.result()
-                all_data.extend(batch_results)
-        
-        if all_data:
-            final_df = pd.concat(all_data, ignore_index=True)
-            save_to_db(final_df)
-            save_to_excel(final_df, save_path)
+        all_data = pd.DataFrame()
+
+        for i, video_id in enumerate(video_ids, start=1):
+            try:
+                df = collect_video_data(driver, video_id, i, total)
+                if df is not None and not df.empty:
+                    save_to_db(df)
+            except Exception as e:
+                logger.error(f"❌ 영상 크롤링 중 에러 발생: {video_id}, 에러: {e}", exc_info=True)
+
+        if not all_data.empty:
+            save_to_db(all_data)
+            save_to_excel(all_data, save_path)
         else:
             logger.warning("⚠️ 크롤링 결과 데이터 없음")
 
@@ -798,22 +773,6 @@ def crawl_channel_videos(channel_url: str, save_path: str):
 if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
-
-    # 크롬 드라이버 옵션 최적화를 위한 전역 설정
-    def optimize_chrome_options():
-        options = webdriver.ChromeOptions()
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--disable-extensions")
-        options.add_argument("--disable-infobars")
-        options.add_argument("--start-maximized")
-        options.add_argument("--disable-notifications")
-        options.add_argument('--ignore-certificate-errors')
-        options.add_argument('--ignore-ssl-errors')
-        options.add_argument('--disable-images')  # 이미지 로딩 비활성화
-        options.add_argument('--disable-plugins')  # 플러그인 비활성화
-        return options
 
     channel_urls = [
         "https://www.youtube.com/@li2py",
@@ -826,15 +785,15 @@ if __name__ == "__main__":
     for channel_url in channel_urls:
         try:
             logger.info(f"🚀 채널 크롤링 시작: {channel_url}")
-            
-            today_str = datetime.now().strftime("%Y%m%d")
+
+            today_str = datetime.datetime.now().strftime("%Y%m%d")
             channel_name = urllib.parse.unquote(channel_url.split("/")[-1])
             save_path = os.path.join(export_dir,f"{channel_name}_{today_str}.xlsx")
-            
+
             crawl_channel_videos(channel_url, save_path)
             logger.info(f"✅ 채널 크롤링 완료: {channel_url}")
-            
+
         except Exception as e:
             logger.warning(f"❌ 채널 크롤링 중 오류 발생: {channel_url} - {e}")
         
-        time.sleep(1)
+        time.sleep(1)  # 각 채널 간 1초 쉬었다가 다음 채널 실행
