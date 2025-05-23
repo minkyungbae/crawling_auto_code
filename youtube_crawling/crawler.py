@@ -806,6 +806,7 @@ def save_to_db(data: pd.DataFrame):
 
     from django.db import transaction
     saved_count = 0
+    updated_count = 0
     
     try:
         with transaction.atomic():
@@ -826,42 +827,79 @@ def save_to_db(data: pd.DataFrame):
                 
                 # 설명란 정리
                 description = clean_description(row.get("description", ""))
-                
-                # 비디오 데이터 생성 또는 업데이트
-                video_obj, created = YouTubeVideo.objects.update_or_create(
-                    video_id=video_id,
-                    defaults={
-                        "extracted_date": extracted_date,
-                        "upload_date": upload_date,
-                        "channel_name": row.get("channel_name"),
-                        "subscriber_count": subscriber_count,
-                        "title": row.get("title"),
-                        "view_count": view_count,
-                        "video_url": row.get("video_url"),
-                        "product_count": row.get("product_count", 0),
-                        "description": description,
-                    }
-                )
+
+                try:
+                    # 기존 영상이 있는지 확인
+                    video_obj = YouTubeVideo.objects.get(video_id=video_id)
+                    logger.info(f"🔄 기존 영상 발견: {video_id}, 정보를 업데이트합니다.")
+                    
+                    # 기존 영상 정보 업데이트
+                    video_obj.extracted_date = extracted_date
+                    video_obj.upload_date = upload_date
+                    video_obj.channel_name = row.get("channel_name")
+                    video_obj.subscriber_count = subscriber_count
+                    video_obj.title = row.get("title")
+                    video_obj.view_count = view_count
+                    video_obj.video_url = row.get("video_url")
+                    video_obj.product_count = row.get("product_count", 0)
+                    video_obj.description = description
+                    video_obj.save()
+                    
+                    # 기존 제품 정보 삭제
+                    video_obj.products.all().delete()
+                    updated_count += 1
+                    
+                except YouTubeVideo.DoesNotExist:
+                    # 새로운 영상 생성
+                    video_obj = YouTubeVideo.objects.create(
+                        video_id=video_id,
+                        extracted_date=extracted_date,
+                        upload_date=upload_date,
+                        channel_name=row.get("channel_name"),
+                        subscriber_count=subscriber_count,
+                        title=row.get("title"),
+                        view_count=view_count,
+                        video_url=row.get("video_url"),
+                        product_count=row.get("product_count", 0),
+                        description=description,
+                    )
+                    logger.info(f"✨ 새로운 영상 생성: {video_id}")
 
                 # 250523제품 정보가 있는 경우에만 저장
                 product_name = row.get("product_name")
                 if product_name and pd.notna(product_name) and product_name.strip():
-                    product = YouTubeProduct.objects.create(
+                    # 제품 정보가 이미 존재하는지 확인
+                    existing_product = YouTubeProduct.objects.filter(
                         video=video_obj,
                         product_name=product_name,
-                        product_price=row.get("product_price", ""),
-                        product_image_link=row.get("product_image_url", ""),
-                        product_link=row.get("product_url", ""),
-                        product_merchant=row.get("product_merchant", "")
-                    )
-                    logger.info(f"✅ 제품 정보 저장 완료: {product_name} (video_id: {video_id})")
-                    saved_count += 1
+                        product_link=row.get("product_url", "")
+                    ).first()
+                    
+                    if existing_product:
+                        # 기존 제품 정보 업데이트
+                        existing_product.product_price = row.get("product_price", "")
+                        existing_product.product_image_link = row.get("product_image_url", "")
+                        existing_product.product_merchant = row.get("product_merchant", "")
+                        existing_product.save()
+                        logger.info(f"🔄 제품 정보 업데이트: {product_name}")
+                    else:
+                        # 새로운 제품 생성
+                        YouTubeProduct.objects.create(
+                            video=video_obj,
+                            product_name=product_name,
+                            product_price=row.get("product_price", ""),
+                            product_image_link=row.get("product_image_url", ""),
+                            product_link=row.get("product_url", ""),
+                            product_merchant=row.get("product_merchant", "")
+                        )
+                        logger.info(f"✨ 새로운 제품 정보 저장: {product_name}")
+                        saved_count += 1
 
     except Exception as e:
         logger.error(f"❌ DB 저장 중 에러 발생: {e}", exc_info=True)
         return 0
 
-    logger.info(f"총 {saved_count}개의 제품 정보가 저장되었습니다.")
+    logger.info(f"✅ 총 {updated_count}개의 영상이 업데이트되었고, {saved_count}개의 새로운 제품이 저장되었습니다.")
     return saved_count
 
 # ------------------------------------- ⬇️ 유튜브 채널의 전체 크롤링을 실행하는 함수 ------------------------------
