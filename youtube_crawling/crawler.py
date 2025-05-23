@@ -248,237 +248,99 @@ def click_description(driver) -> str:
 def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
     products = []
     try:
-        # 250522 제품 섹션 찾기 (여러 선택자 시도)
-        product_sections = []
-        section_selectors = [
-            "ytd-merch-shelf-renderer",
-            "ytd-product-metadata-badge-renderer",
-            "ytd-product-item-renderer",
-            "#product-shelf",
-            "#items.ytd-merch-shelf-renderer",
-            "ytd-merch-shelf-item-renderer",
-            "#content ytd-metadata-row-container-renderer",
-            "#product-list",
-            ".product-list",
-            ".product-shelf"
-        ]
-        
-        # 250523 이미지 선택자 목록 정의
-        img_selectors = [
-            "img#img",
-            "img.ytd-merch-product-renderer-thumbnail",
-            "yt-img-shadow img",
-            ".product-image img",
-            ".product-item-image img",
-            "img[class*='product']",
-            "img[alt]",
-            ".style-scope.yt-img-shadow",
-            "img.style-scope",
-            "img[src*='i.ytimg.com']",
-            "img[data-thumb]",
-            "ytd-img-shadow img",
-            "img.style-scope.yt-img-shadow",
-            "img.style-scope.ytd-merch-shelf-renderer",
-            "ytd-thumbnail[size='MERCH_SHELF'] img",
-            "ytd-merch-shelf-renderer ytd-thumbnail img",
-            "ytd-thumbnail-overlay-loading-preview-renderer",
-            "#thumbnail img",
-            "ytd-thumbnail.ytd-merch-shelf-renderer img"
-        ]
-        
-        for selector in section_selectors:
-            sections = soup.select(selector)
-            if sections:
-                product_sections.extend(sections)
-                logger.info(f"제품 섹션 찾음: {selector}")
-                
-        if not product_sections:
+        # 제품 섹션 찾기
+        product_section = soup.select_one("#items.style-scope.ytd-merch-shelf-renderer")
+        if not product_section:
             logger.warning("제품 섹션을 찾을 수 없습니다.")
             return []
 
-        # 각 제품 섹션에서 제품 정보 추출
-        for section in product_sections:
+        # 각 제품 아이템 찾기
+        product_items = product_section.select("ytd-merch-shelf-item-renderer")
+        if not product_items:
+            logger.warning("제품 아이템을 찾을 수 없습니다.")
+            return []
+
+        total_items = len(product_items)
+        logger.info(f"총 {total_items}개의 제품 아이템을 찾았습니다.")
+
+        # 250523 제품 정보 추출
+        for item in product_items:
             try:
-                # 제품 아이템 찾기
-                item_selectors = [
-                    "ytd-merch-shelf-item-renderer",
-                    ".product-item",
-                    ".ytd-merch-product-renderer",
-                    "ytd-product-item-renderer",
-                    ".product-shelf-item"
+                product_info = {}
+
+                # 1. 제품명 추출
+                title_elem = item.select_one(".small-item-hide.product-item-title")
+                if title_elem and (title_text := title_elem.get_text(strip=True)):
+                    product_info["title"] = title_text
+                    logger.info(f"✅ 제품명 추출 성공: {title_text}")
+                else:
+                    logger.warning("⚠️ 제품명을 찾을 수 없어 다음 아이템으로 넘어갑니다")
+                    continue
+
+                # 2. 제품 링크 추출
+                link_elem = item.select_one(".product-item-description")
+                if link_elem and (product_url := link_elem.get_text(strip=True)):
+                    product_info["url"] = product_url
+                    logger.info(f"✅ 제품 링크 추출 성공: {product_url}")
+
+                # 3. 가격 추출
+                price_elem = item.select_one(".product-item-price")
+                if price_elem and (price_text := price_elem.get_text(strip=True)):
+                    product_info["price"] = price_text
+                    logger.info(f"✅ 제품 가격 추출 성공: {price_text}")
+                else:
+                    logger.warning("⚠️ 가격 정보를 찾을 수 없어 다음 아이템으로 넘어갑니다")
+                    continue
+
+                # 4. 250523 이미지 URL 추출
+                img_selectors = [
+                    "yt-img-shadow.product-item-image img",  # 기존 선택자
+                    ".product-item-image img",               # 클래스만으로 선택
+                    "img.style-scope.yt-img-shadow",        # 이미지 직접 선택
+                    ".product-item-renderer img",           # 상위 컨테이너에서 이미지 선택
+                    "ytd-merch-shelf-item-renderer img"     # 최상위 컨테이너에서 이미지 선택
                 ]
                 
-                items = []
-                for selector in item_selectors:
-                    items.extend(section.select(selector))
-                
-                for item in items:
-                    product_info = {}
-                    
-                    # 1. 제품명 추출
-                    logger.info("🔍 제품명 추출 시작")
-                    title_selectors = [
-                        ".product-item-title",
-                        "span#video-title",
-                        "yt-formatted-string.ytd-merch-product-renderer",
-                        "a#title",
-                        "span[id='title']",
-                        ".product-title",
-                        ".ytd-merch-product-renderer-title",
-                        "div[class*='title']",
-                        ".small-item-hide.product-item-title"
-                    ]
-                    
-                    for selector in title_selectors:
-                        if title_elem := item.select_one(selector):
-                            if title_text := title_elem.get_text(strip=True):
-                                product_info["title"] = title_text
-                                logger.info(f"✅ 제품명 추출 성공: {title_text}")
-                                break
-                    
-                    # 제품명이 없으면 다음 아이템으로
-                    if "title" not in product_info:
-                        logger.warning("⚠️ 제품명을 찾을 수 없어 다음 아이템으로 넘어갑니다")
-                        continue
+                img_url = None
+                for selector in img_selectors:
+                    img_elem = item.select_one(selector)
+                    if img_elem:
+                        # src 또는 data-src 속성에서 URL 추출 시도
+                        img_url = (
+                            img_elem.get("src") or 
+                            img_elem.get("data-src") or 
+                            img_elem.get("srcset", "").split()[0]  # srcset이 있는 경우 첫 번째 URL 사용
+                        )
+                        if img_url:
+                            product_info["imageUrl"] = img_url
+                            logger.info(f"✅ 제품 이미지 URL 추출 성공: {img_url}")
+                            break
 
-                    # 2. 제품 링크 추출
-                    logger.info("🔍 제품 링크 추출 시작")
-                    link_selectors = [
-                        "a.yt-simple-endpoint",
-                        "a[href*='redirect']",
-                        "a[href*='shopping']",
-                        "a[target='_blank']",
-                        ".product-link",
-                        ".ytd-merch-product-renderer a",
-                        "a.product-item-link"
-                    ]
-                    
-                    for selector in link_selectors:
-                        if link_elem := item.select_one(selector):
-                            href = link_elem.get("href")
-                            if href:
-                                if "redirect" in href:
-                                    try:
-                                        parsed = urlparse(href)
-                                        query_params = dict(parse_qsl(parsed.query))
-                                        if 'q' in query_params:
-                                            href = query_params['q']
-                                        elif 'url' in query_params:
-                                            href = query_params['url']
-                                    except:
-                                        pass
-                                product_info["url"] = href if href.startswith("http") else f"https://www.youtube.com{href}"
-                                logger.info(f"✅ 제품 링크 추출 성공: {product_info['url']}")
-                                break
+                if not img_url:
+                    logger.warning(f"⚠️ 제품 이미지를 찾을 수 없습니다: {product_info.get('title', '제품명 없음')}")
 
-                    # 3. 가격 추출
-                    logger.info("🔍 제품 가격 추출 시작")
-                    price_selectors = [
-                        ".product-item-price",
-                        "span#price",
-                        "span.price",
-                        "yt-formatted-string#price",
-                        ".ytd-merch-product-renderer-price",
-                        ".product-price"
-                    ]
-                    
-                    for selector in price_selectors:
-                        if price_elem := item.select_one(selector):
-                            if price_text := price_elem.get_text(strip=True):
-                                product_info["price"] = price_text
-                                logger.info(f"✅ 제품 가격 추출 성공: {price_text}")
-                                break
-                    if "price" not in product_info:
-                        logger.warning("⚠️ 제품 가격을 찾을 수 없습니다")
+                # 5. 판매처 추출
+                merchant_elem = item.select_one(".product-item-merchant-text")
+                if merchant_elem and (merchant_text := merchant_elem.get_text(strip=True)):
+                    merchant_name = merchant_text.replace("!", "").strip()
+                    product_info["merchant"] = merchant_name
+                    logger.info(f"✅ 판매처 추출 성공: {merchant_name}")
 
-                    # 4. 이미지 URL 추출
-                    logger.info("🔍 제품 이미지 URL 추출 시작")
-                    image_found = False
-                    for selector in img_selectors:
-                        try:
-                            img_elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                            for img_elem in img_elements:
-                                try:
-                                    parent = img_elem
-                                    for _ in range(5):
-                                        parent = parent.find_element(By.XPATH, "..")
-                                        parent_class = parent.get_attribute("class") or ""
-                                        if any(keyword in parent_class.lower() for keyword in ["product", "merch", "item"]):
-                                            src = (img_elem.get_attribute("src") or 
-                                                  img_elem.get_attribute("data-thumb") or 
-                                                  img_elem.get_attribute("data-src") or
-                                                  img_elem.get_attribute("srcset"))
-                                            
-                                            if src and not any(keyword in src.lower() for keyword in ["yt3.ggpht.com", "avatar", "profile", "channel"]):
-                                                if src.startswith("//"):
-                                                    src = f"https:{src}"
-                                                elif not src.startswith(("http://", "https://")):
-                                                    src = f"https://www.youtube.com{src}"
-                                                
-                                                if "=" in src:
-                                                    src = re.sub(r'=w\d+(-h\d+)?', '=w256-h256', src)
-                                                else:
-                                                    src = f"{src}=w256-h256"
-                                                
-                                                product_info["imageUrl"] = src
-                                                logger.info(f"✅ 제품 이미지 URL 추출 성공: {src}")
-                                                image_found = True
-                                                break
-                                except:
-                                    continue
-                            if image_found:
-                                break
-                        except:
-                            continue
-                    
-                    if not image_found:
-                        logger.warning("⚠️ 제품 이미지 URL을 찾을 수 없습니다")
-
-                    # 5. 판매처 추출
-                    logger.info("🔍 판매처 추출 시작")
-                    merchant_selectors = [
-                        ".product-item-merchant-text",
-                        ".product-merchant",
-                        ".merchant-name",
-                        "div[class*='merchant']"
-                    ]
-                    
-                    for selector in merchant_selectors:
-                        if merchant_elem := item.select_one(selector):
-                            if merchant_text := merchant_elem.get_text(strip=True):
-                                product_info["merchant"] = merchant_text.replace("!", "").strip()
-                                logger.info(f"✅ 판매처 추출 성공: {product_info['merchant']}")
-                                break
-                    if "merchant" not in product_info:
-                        logger.warning("⚠️ 판매처를 찾을 수 없습니다")
-
-                    # 필수 정보가 있는 경우에만 제품 목록에 추가
-                    if "title" in product_info and "imageUrl" in product_info:
-                        # 중복 체크: 동일한 제품명과 URL을 가진 제품이 이미 있는지 확인
-                        is_duplicate = False
-                        for existing_product in products:
-                            if (existing_product.get("title") == product_info["title"] and 
-                                existing_product.get("url") == product_info.get("url")):
-                                is_duplicate = True
-                                logger.warning(f"⚠️ 중복된 제품 발견: {product_info['title']}, 건너뜁니다.")
-                                break
-                        
-                        if not is_duplicate:
-                            products.append(product_info)
-                            logger.info(f"✅ 제품 정보 추출 완료: {product_info['title']}")
-                    else:
-                        logger.warning("⚠️ 필수 정보(제품명 또는 이미지 URL)가 없어 제품을 추가하지 않습니다")
+                # 제품명과 가격만 있어도 저장
+                if "title" in product_info and "price" in product_info:
+                    products.append(product_info)
+                    logger.info(f"✅ 제품 정보 추출 완료: {product_info['title']} ({product_info['price']})")
 
             except Exception as e:
-                logger.warning(f"개별 제품 파싱 중 오류: {e}")
+                logger.error(f"❌ 제품 정보 추출 중 에러 발생: {str(e)}")
                 continue
 
+        logger.info(f"총 {len(products)}개의 제품 정보 추출 완료")
+        return products
+
     except Exception as e:
-        logger.error(f"❌ 제품 정보 추출 중 오류 발생: {e}")
+        logger.error(f"❌ 전체 제품 추출 중 에러 발생: {e}")
         return []
-        
-    logger.info(f"총 {len(products)}개의 제품 추출 완료")
-    return products
 
 # ---------------------- ⬇️ 영상 기본 정보: 제목, 채널명, 구독자 수, 조회수, 업로드일, 제품 개수 ----------------------
 def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
@@ -640,13 +502,13 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         if products is None:  # None 체크 추가
             products = []
         product_count = len(products)
+        logger.info(f"✅ 영상 정보 및 제품 {product_count}개 수집 완료")
 
         # 기본 데이터 세트
         base_data = []
         
-        # 250523
+        # 250523 제품이 있는 경우, 각 제품별로 row 생성
         if products:
-            # 각 제품별로 row 생성
             for product in products:
                 row_data = {
                     "youtube_id": video_id,
@@ -686,7 +548,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 "product_merchant": ""
             })
 
-        logger.info(f"✅ 영상 정보 및 제품 {product_count}개 수집 완료")
+        logger.info(f"📦 수집된 제품 개수: {len(base_data)}")
         return pd.DataFrame(base_data)
     
     except Exception as e:
@@ -917,11 +779,13 @@ def crawl_channel_videos(channel_url: str, save_path: str):
 
         for i, video_id in enumerate(video_ids, start=1):
             try:
-                df = collect_video_data(driver, video_id, i, total)
+                logger.info(f"\n🔍 ({i}/{total}) 영상 크롤링 시작: {video_id}")
+                df = collect_video_data(driver, video_id)
                 if df is not None and not df.empty:
                     save_to_db(df)
+                    logger.info(f"✅ ({i}/{total}) 영상 크롤링 완료: {video_id}")
             except Exception as e:
-                logger.error(f"❌ 영상 크롤링 중 에러 발생: {video_id}, 에러: {e}", exc_info=True)
+                logger.error(f"❌ ({i}/{total}) 영상 크롤링 중 에러 발생: {video_id}, 에러: {e}", exc_info=True)
 
         if not all_data.empty:
             save_to_db(all_data)
