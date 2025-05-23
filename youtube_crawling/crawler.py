@@ -318,24 +318,32 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                             "a.product-item-link",
                             "a[data-url]",
                             "a[data-sessionlink]",
-                            "ytd-button-renderer a"
+                            "ytd-button-renderer a",
+                            "ytd-button-renderer.style-scope.ytd-merch-shelf-renderer",
+                            "a.yt-simple-endpoint.style-scope.ytd-button-renderer"
                         ]
                         
+                        logger.info("제품 정보 추출 시작")
                         for selector in link_selectors:
                             if link_elem := item.select_one(selector):
+                                logger.info(f"링크 선택자 '{selector}' 매칭됨")
                                 href = link_elem.get("href") or link_elem.get("data-url")
                                 if href:
+                                    logger.info(f"원본 링크: {href}")
                                     if "redirect" in href:
                                         try:
                                             parsed = urlparse(href)
                                             query_params = dict(parse_qsl(parsed.query))
+                                            logger.info(f"리다이렉트 파라미터: {query_params}")
                                             if 'q' in query_params:
                                                 href = query_params['q']
                                             elif 'url' in query_params:
                                                 href = query_params['url']
-                                        except:
+                                        except Exception as e:
+                                            logger.error(f"URL 파싱 에러: {e}")
                                             pass
                                     product_info["url"] = href if href.startswith("http") else f"https://www.youtube.com{href}"
+                                    logger.info(f"최종 제품 URL: {product_info['url']}")
                                     break
 
                         # 제품명
@@ -387,17 +395,25 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                             ".style-scope.yt-img-shadow",
                             "img.style-scope",
                             "img[src*='i.ytimg.com']",
-                            "img[data-thumb]"
+                            "img[data-thumb]",
+                            "ytd-img-shadow img",
+                            "img.style-scope.yt-img-shadow",
+                            "img.style-scope.ytd-merch-shelf-renderer"
                         ]
                         
                         for selector in img_selectors:
                             if img_elem := item.select_one(selector):
+                                logger.info(f"이미지 선택자 '{selector}' 매칭됨")
+                                # 이미지 요소의 모든 속성 출력
+                                logger.info(f"이미지 요소 속성들: {img_elem.attrs}")
+                                
                                 # 여러 속성에서 이미지 URL 찾기
                                 src = (img_elem.get("src") or 
                                       img_elem.get("data-thumb") or 
                                       img_elem.get("data-src"))
                                 
                                 if src:
+                                    logger.info(f"원본 이미지 URL: {src}")
                                     # 상대 URL을 절대 URL로 변환
                                     if src.startswith("//"):
                                         src = f"https:{src}"
@@ -405,6 +421,7 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                                         src = f"https://www.youtube.com{src}"
                                     
                                     product_info["imageUrl"] = src
+                                    logger.info(f"최종 이미지 URL: {product_info['imageUrl']}")
                                     break
 
                         # 판매처
