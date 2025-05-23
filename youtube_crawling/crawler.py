@@ -383,25 +383,41 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
 
     try:
         driver.get(video_url)
-        # 페이지 로딩 대기 시간 증가 및 명시적 대기 조건 추가
-        wait = WebDriverWait(driver, 20)
+        # 페이지 로딩 대기 시간 증가
+        time.sleep(5)
+        
+        # 페이지 스크롤을 여러 번 수행하여 동적 컨텐츠 로드
+        for _ in range(3):
+            driver.execute_script("window.scrollTo(0, window.scrollY + 500);")
+            time.sleep(2)
         
         # 제품 섹션이 로드될 때까지 대기
-        try:
-            wait.until(lambda d: d.find_elements(By.CSS_SELECTOR, 
-                "ytd-product-metadata-badge-renderer, ytd-merch-shelf-renderer"))
-        except:
-            logger.info("제품 섹션을 찾을 수 없습니다. 계속 진행합니다.")
+        wait = WebDriverWait(driver, 20)
+        # 250523 제품 섹션 선택지 추가
+        product_selectors = [
+            "ytd-product-metadata-badge-renderer",
+            "ytd-merch-shelf-renderer",
+            "ytd-product-item-renderer",
+            "#product-shelf",
+            "#product-list",
+            "ytd-merch-product-renderer",
+            "#product-items",
+            ".product-item"
+        ]
         
-        # 페이지 스크롤하여 동적 컨텐츠 로드
-        driver.execute_script("window.scrollTo(0, 400);")
-        time.sleep(2)
+        for selector in product_selectors:
+            try:
+                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
+                logger.info(f"제품 섹션 찾음: {selector}")
+                break
+            except:
+                continue
         
         # 설명란 펼치기 버튼 클릭 시도
         try:
-            more_button = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "tp-yt-paper-button#expand")))
+            more_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "tp-yt-paper-button#expand")))
             driver.execute_script("arguments[0].click();", more_button)
-            time.sleep(1)
+            time.sleep(2)
         except:
             logger.info("설명란 펼치기 버튼을 찾을 수 없습니다.")
         
