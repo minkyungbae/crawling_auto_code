@@ -248,54 +248,42 @@ def click_description(driver) -> str:
 def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
     products = []
     try:
-        # 여러 가지 제품 섹션 선택자 시도
-        product_section_selectors = [
-            "#items.style-scope.ytd-merch-shelf-renderer",
-            "ytd-merch-shelf-renderer #items",
-            "#product-items",
-            ".product-items"
-        ]
-        
-        product_section = None
-        for selector in product_section_selectors:
-            product_section = soup.select_one(selector)
-            if product_section:
-                break
-                
+        # 제품 섹션 찾기
+        product_section = soup.select_one("#items.style-scope.ytd-merch-shelf-renderer")
         if not product_section:
             logger.warning("제품 섹션을 찾을 수 없습니다.")
             return []
 
-        # 제품 아이템 선택자도 다양화
-        product_items = product_section.select("ytd-merch-shelf-item-renderer, .product-item")
-        
-        logger.info(f"찾은 제품 수: {len(product_items)}")
-        
+        # 각 제품 아이템 찾기
+        product_items = product_section.select("ytd-merch-shelf-item-renderer")
+        if not product_items:
+            logger.warning("제품 아이템을 찾을 수 없습니다.")
+            return []
+
+        total_items = len(product_items)
+        logger.info(f"총 {total_items}개의 제품 아이템을 찾았습니다.")
+
+        # 250523 제품 정보 추출
         for item in product_items:
             try:
                 product_info = {}
-                
-                # 제품명 추출 - 여러 선택자 시도
-                title_selectors = [
-                    ".small-item-hide.product-item-title",
-                    ".product-item-title",
-                    "[id*='title']",
-                    ".title"
-                ]
-                
-                for selector in title_selectors:
-                    title_elem = item.select_one(selector)
-                    if title_elem and (title_text := title_elem.get_text(strip=True)):
-                        product_info["title"] = title_text
-                        break
-                
-                # 제품 링크 추출
+
+                # 1. 제품명 추출
+                title_elem = item.select_one(".small-item-hide.product-item-title")
+                if title_elem and (title_text := title_elem.get_text(strip=True)):
+                    product_info["title"] = title_text
+                    logger.info(f"✅ 제품명 추출 성공: {title_text}")
+                else:
+                    logger.warning("⚠️ 제품명을 찾을 수 없어 다음 아이템으로 넘어갑니다")
+                    continue
+
+                # 2. 제품 링크 추출
                 link_elem = item.select_one(".product-item-description")
                 if link_elem and (product_url := link_elem.get_text(strip=True)):
                     product_info["url"] = product_url
                     logger.info(f"✅ 제품 링크 추출 성공: {product_url}")
 
-                # 가격 추출
+                # 3. 가격 추출
                 price_elem = item.select_one(".product-item-price")
                 if price_elem and (price_text := price_elem.get_text(strip=True)):
                     product_info["price"] = price_text
@@ -304,7 +292,7 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                     logger.warning("⚠️ 가격 정보를 찾을 수 없어 다음 아이템으로 넘어갑니다")
                     continue
 
-                # 250523 이미지 URL 추출
+                # 4. 250523 이미지 URL 추출
                 img_selectors = [
                     "yt-img-shadow.product-item-image img",  # 기존 선택자
                     ".product-item-image img",               # 클래스만으로 선택
@@ -331,7 +319,7 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                 if not img_url:
                     logger.warning(f"⚠️ 제품 이미지를 찾을 수 없습니다: {product_info.get('title', '제품명 없음')}")
 
-                # 판매처 추출
+                # 5. 판매처 추출
                 merchant_elem = item.select_one(".product-item-merchant-text")
                 if merchant_elem and (merchant_text := merchant_elem.get_text(strip=True)):
                     merchant_name = merchant_text.replace("!", "").strip()
@@ -739,34 +727,34 @@ def save_to_db(data: pd.DataFrame):
                     )
                     logger.info(f"✨ 새로운 영상 생성: {video_id}")
 
-                # 제품 정보 저장 부분 수정
-                product_title = row.get("title")
-                if product_title and pd.notna(product_title) and product_title.strip():
+                # 250523제품 정보가 있는 경우에만 저장
+                product_name = row.get("product_name")
+                if product_name and pd.notna(product_name) and product_name.strip():
                     # 제품 정보가 이미 존재하는지 확인
                     existing_product = YouTubeProduct.objects.filter(
                         video=video_obj,
-                        product_name=product_title,
-                        product_link=row.get("url", "")
+                        product_name=product_name,
+                        product_link=row.get("product_url", "")
                     ).first()
                     
                     if existing_product:
                         # 기존 제품 정보 업데이트
-                        existing_product.product_price = row.get("price", "")
-                        existing_product.product_image_link = row.get("imageUrl", "")
-                        existing_product.product_merchant = row.get("merchant", "")
+                        existing_product.product_price = row.get("product_price", "")
+                        existing_product.product_image_link = row.get("product_image_url", "")
+                        existing_product.product_merchant = row.get("product_merchant", "")
                         existing_product.save()
-                        logger.info(f"🔄 제품 정보 업데이트: {product_title}")
+                        logger.info(f"🔄 제품 정보 업데이트: {product_name}")
                     else:
                         # 새로운 제품 생성
                         YouTubeProduct.objects.create(
                             video=video_obj,
-                            product_name=product_title,
-                            product_price=row.get("price", ""),
-                            product_image_link=row.get("imageUrl", ""),
-                            product_link=row.get("url", ""),
-                            product_merchant=row.get("merchant", "")
+                            product_name=product_name,
+                            product_price=row.get("product_price", ""),
+                            product_image_link=row.get("product_image_url", ""),
+                            product_link=row.get("product_url", ""),
+                            product_merchant=row.get("product_merchant", "")
                         )
-                        logger.info(f"✨ 새로운 제품 정보 저장: {product_title}")
+                        logger.info(f"✨ 새로운 제품 정보 저장: {product_name}")
                         saved_count += 1
 
     except Exception as e:
