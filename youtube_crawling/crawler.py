@@ -398,7 +398,12 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                             "img[data-thumb]",
                             "ytd-img-shadow img",
                             "img.style-scope.yt-img-shadow",
-                            "img.style-scope.ytd-merch-shelf-renderer"
+                            "img.style-scope.ytd-merch-shelf-renderer",
+                            "ytd-thumbnail[size='MERCH_SHELF'] img",
+                            "ytd-merch-shelf-renderer ytd-thumbnail img",
+                            "ytd-thumbnail-overlay-loading-preview-renderer",
+                            "#thumbnail img",
+                            "ytd-thumbnail.ytd-merch-shelf-renderer img"
                         ]
                         
                         for selector in img_selectors:
@@ -410,7 +415,17 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                                 # 여러 속성에서 이미지 URL 찾기
                                 src = (img_elem.get("src") or 
                                       img_elem.get("data-thumb") or 
-                                      img_elem.get("data-src"))
+                                      img_elem.get("data-src") or
+                                      img_elem.get("srcset") or  # srcset 속성 추가
+                                      img_elem.get("loading-background") or  # loading-background 속성 추가
+                                      img_elem.parent.get("loading-background"))  # 부모 요소의 loading-background도 확인
+                                
+                                if not src and "style" in img_elem.attrs:  # style 속성에서 background-image URL 추출 시도
+                                    style = img_elem["style"]
+                                    if "background-image" in style:
+                                        url_match = re.search(r'url\(["\']?(.*?)["\']?\)', style)
+                                        if url_match:
+                                            src = url_match.group(1)
                                 
                                 if src:
                                     logger.info(f"원본 이미지 URL: {src}")
