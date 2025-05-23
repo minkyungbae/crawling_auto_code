@@ -315,18 +315,24 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                             "a[target='_blank']",
                             ".product-link",
                             ".ytd-merch-product-renderer a",
-                            "a.product-item-link"
+                            "a.product-item-link",
+                            "a[data-url]",
+                            "a[data-sessionlink]",
+                            "ytd-button-renderer a"
                         ]
                         
                         for selector in link_selectors:
                             if link_elem := item.select_one(selector):
-                                if href := link_elem.get("href"):
+                                href = link_elem.get("href") or link_elem.get("data-url")
+                                if href:
                                     if "redirect" in href:
                                         try:
                                             parsed = urlparse(href)
                                             query_params = dict(parse_qsl(parsed.query))
                                             if 'q' in query_params:
                                                 href = query_params['q']
+                                            elif 'url' in query_params:
+                                                href = query_params['url']
                                         except:
                                             pass
                                     product_info["url"] = href if href.startswith("http") else f"https://www.youtube.com{href}"
@@ -378,15 +384,26 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                             ".product-item-image img",
                             "img[class*='product']",
                             "img[alt]",
-                            ".style-scope.yt-img-shadow"
+                            ".style-scope.yt-img-shadow",
+                            "img.style-scope",
+                            "img[src*='i.ytimg.com']",
+                            "img[data-thumb]"
                         ]
                         
                         for selector in img_selectors:
                             if img_elem := item.select_one(selector):
-                                if src := img_elem.get("src"):
-                                    product_info["imageUrl"] = src
-                                    break
-                                elif src := img_elem.get("data-src"):  # 지연 로딩된 이미지
+                                # 여러 속성에서 이미지 URL 찾기
+                                src = (img_elem.get("src") or 
+                                      img_elem.get("data-thumb") or 
+                                      img_elem.get("data-src"))
+                                
+                                if src:
+                                    # 상대 URL을 절대 URL로 변환
+                                    if src.startswith("//"):
+                                        src = f"https:{src}"
+                                    elif not src.startswith(("http://", "https://")):
+                                        src = f"https://www.youtube.com{src}"
+                                    
                                     product_info["imageUrl"] = src
                                     break
 
