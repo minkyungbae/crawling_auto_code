@@ -248,7 +248,7 @@ def click_description(driver) -> str:
 def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
     products = []
     try:
-        # 제품 섹션 찾기 (여러 선택자 시도)
+        # 250522 제품 섹션 찾기 (여러 선택자 시도)
         product_sections = []
         selectors = [
             "ytd-product-metadata-badge-renderer",
@@ -278,7 +278,7 @@ def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
                         image_url = img_url
                         break
                 
-                # 제품 이름 (여러 선택자 시도)
+                # 250522 제품 이름 (여러 선택자 시도)
                 title = None
                 title_selectors = [
                     ".product-title", 
@@ -292,7 +292,7 @@ def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
                             title = title_text
                             break
                 
-                # 제품 가격 (여러 선택자 시도)
+                # 250522 제품 가격 (여러 선택자 시도)
                 price = None
                 price_selectors = [
                     ".price",
@@ -306,7 +306,7 @@ def extract_products_from_dom(soup: BeautifulSoup) -> list[dict]:
                             price = price_text
                             break
                 
-                # 제품 링크 (여러 선택자 시도)
+                # 250522 제품 링크 (여러 선택자 시도)
                 url = None
                 link_selectors = [
                     "a.yt-simple-endpoint[href*='redirect']",  # 외부 판매처 리다이렉트 링크
@@ -383,7 +383,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
 
     try:
         driver.get(video_url)
-        # 페이지 로딩 대기 시간 증가
+        # 페이지 로딩 대기 시간
         time.sleep(5)
         
         # 페이지 스크롤을 여러 번 수행하여 동적 컨텐츠 로드
@@ -391,8 +391,29 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
             driver.execute_script("window.scrollTo(0, window.scrollY + 500);")
             time.sleep(2)
         
-        # 제품 섹션이 로드될 때까지 대기
         wait = WebDriverWait(driver, 20)
+        
+        # 250523 더보기 버튼 클릭 시도 (여러 셀렉터 시도)
+        expand_button_selectors = [
+            "tp-yt-paper-button#expand",
+            "#expand",
+            "#expand-button",
+            "#more",
+            "ytd-button-renderer#more",
+            "ytd-expander#description [aria-label='더보기']",
+            "ytd-expander[description-collapsed] #expand"
+        ]
+        
+        for selector in expand_button_selectors:
+            try:
+                more_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, selector)))
+                driver.execute_script("arguments[0].click();", more_button)
+                logger.info(f"더보기 버튼 클릭 성공: {selector}")
+                time.sleep(3)  # 더보기 클릭 후 컨텐츠 로드 대기
+                break
+            except:
+                continue
+                
         # 250523 제품 섹션 선택지 추가
         product_selectors = [
             "ytd-product-metadata-badge-renderer",
@@ -402,7 +423,10 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
             "#product-list",
             "ytd-merch-product-renderer",
             "#product-items",
-            ".product-item"
+            ".product-item",
+            "#content ytd-metadata-row-container-renderer",
+            "ytd-metadata-row-renderer",
+            "#product-section"
         ]
         
         for selector in product_selectors:
@@ -413,20 +437,12 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
             except:
                 continue
         
-        # 설명란 펼치기 버튼 클릭 시도
-        try:
-            more_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "tp-yt-paper-button#expand")))
-            driver.execute_script("arguments[0].click();", more_button)
-            time.sleep(2)
-        except:
-            logger.info("설명란 펼치기 버튼을 찾을 수 없습니다.")
-        
         soup = BeautifulSoup(driver.page_source, "html.parser")
 
         # 메타데이터 추출
         video_id = video_url.split("v=")[-1]
         
-        # 제목 (여러 선택자 시도)
+        # 250522 제목 (여러 선택자 시도)
         title_selectors = [
             "h1.title yt-formatted-string",
             "h1.title",
@@ -443,7 +459,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         title = title or "제목 없음"
         logger.info(f"제목: {title}")
 
-        # 채널명 (여러 선택자 시도)
+        # 250522채널명 (여러 선택자 시도)
         channel_selectors = [
             "ytd-channel-name yt-formatted-string#text a",
             "ytd-channel-name a",
@@ -457,7 +473,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 break
         channel_name = channel_name or "채널 없음"
 
-        # 구독자 수
+        # 250522 구독자 수
         sub_selectors = [
             "yt-formatted-string#owner-sub-count",
             "#subscriber-count"
@@ -470,7 +486,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 break
         subscriber_count = subscriber_count or "구독자 수 없음"
 
-        # 조회수
+        # 250522 조회수
         view_selectors = [
             "span.view-count",
             "#view-count",
@@ -484,7 +500,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 break
         view_count = view_count or "조회수 없음"
 
-        # 업로드일
+        # 250522 업로드일
         date_selectors = [
             "#info-strings yt-formatted-string",
             "#upload-info .date",
@@ -498,7 +514,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 break
         upload_date = upload_date or "날짜 없음"
 
-        # 설명란
+        # 250522 설명란
         desc_selectors = [
             "ytd-expander#description yt-formatted-string",
             "#description",
@@ -515,7 +531,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         description = description or "설명 없음"
         logger.info(f"설명 길이: {len(description)} 글자")
 
-        # 제품 추출
+        # 250522 제품 추출
         products = extract_products_from_dom(soup)
         product_count = len(products)
 
