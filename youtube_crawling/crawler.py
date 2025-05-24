@@ -149,7 +149,7 @@ def parse_view_count(text: str) -> int:
         return 0
 
 
-# ----------------------------- ⬇️ 구독자 수 텍스트를 숫자 형태로 변환 (예: 1.2만명 -> 12000) -----------------------------
+# -------------- ⬇️ 구독자 수 텍스트를 숫자 형태로 변환 (예: 1.2만명 -> 12000) ------------------
 def parse_subscriber_count(text: str) -> int:
     try:
         # 구독자와 명을 제거하고 숫자와 소수점, 단위(천, 만)만 남김
@@ -165,6 +165,22 @@ def parse_subscriber_count(text: str) -> int:
         return int(text)
     except Exception as e:
         logger.warning(f"⚠️ 구독자 수 파싱 실패: '{text}', 이유: {e}")
+        return 0
+    
+    
+# ---------------------- ⬇️ 가격 텍스트를 정수로 변환하는 함수 추가 ----------------------
+def parse_price(price_text: str) -> int:
+    try:
+        if not price_text or pd.isna(price_text):
+            return 0
+        # '₩' 기호와 쉼표 제거 후 숫자만 추출
+        cleaned_price = re.sub(r'[₩,\s]', '', price_text)
+        # 숫자가 있는 경우에만 변환
+        if re.search(r'\d', cleaned_price):
+            return int(re.sub(r'[^\d]', '', cleaned_price))
+        return 0
+    except Exception as e:
+        logger.warning(f"⚠️ 가격 변환 실패: {price_text}, 에러: {e}")
         return 0
 
 
@@ -248,14 +264,19 @@ def click_description(driver) -> str:
 def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
     products = []
     try:
-        # 제품 섹션 찾기
-        product_section = soup.select_one("#items.style-scope.ytd-merch-shelf-renderer")
-        if not product_section:
-            logger.warning("제품 섹션을 찾을 수 없습니다.")
-            return []
+        # 더보기 버튼 클릭 시도
+        try:
+            more_button = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "#expand"))
+            )
+            driver.execute_script("arguments[0].click();", more_button)
+            logger.info("✅ 더보기 버튼 클릭 성공")
+            time.sleep(2)  # 제품 정보가 로드될 때까지 대기
+        except Exception as e:
+            logger.info(f"더보기 버튼 클릭 실패 (이미 펼쳐져 있을 수 있음): {e}")
 
-        # 각 제품 아이템 찾기
-        product_items = product_section.select("ytd-merch-shelf-item-renderer")
+        # 제품 섹션 찾기 (JS Path 기반)
+        product_items = soup.select("#items > ytd-merch-shelf-item-renderer")
         if not product_items:
             logger.warning("제품 아이템을 찾을 수 없습니다.")
             return []
@@ -278,7 +299,7 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                     continue
 
                 # 2. 제품 링크 추출
-                link_elem = item.select_one(".product-item-description")
+                link_elem = item.select_one("div.product-item-description")
                 if link_elem and (product_url := link_elem.get_text(strip=True)):
                     product_info["url"] = product_url
                     logger.info(f"✅ 제품 링크 추출 성공: {product_url}")
@@ -292,32 +313,44 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                     logger.warning("⚠️ 가격 정보를 찾을 수 없어 다음 아이템으로 넘어갑니다")
                     continue
 
-                # 4. 250523 이미지 URL 추출
+                # 4. 이미지 URL 추출 (채널 프로필 제외)
                 img_selectors = [
-                    "yt-img-shadow.product-item-image img",  # 기존 선택자
-                    ".product-item-image img",               # 클래스만으로 선택
-                    "img.style-scope.yt-img-shadow",        # 이미지 직접 선택
-                    ".product-item-renderer img",           # 상위 컨테이너에서 이미지 선택
-                    "ytd-merch-shelf-item-renderer img"     # 최상위 컨테이너에서 이미지 선택
+                    # 제품 섹션 내부의 이미지만 선택
+                    "div.product-item > yt-img-shadow:not([id*='avatar']):not([class*='channel']) > img",  # 기본 구조
+                    "yt-img-shadow.product-item-image:not([id*='avatar']):not([class*='channel']) img",    # 클래스 기반
+                    ".product-item yt-img-shadow:not([id*='avatar']) img:not([alt*='channel'])",           # 단순화된 구조
+                    "yt-img-shadow img[src*='shopping']:not([src*='channel'])",                            # shopping 관련 이미지
+                    "div.product-item img.style-scope.yt-img-shadow:not([class*='channel'])",              # 스타일 스코프
+                    "ytd-merch-shelf-item-renderer:not([class*='channel']) yt-img-shadow img",            # 컴포넌트 기반
+                    ".product-item-image.style-scope:not([class*='avatar']) img",                         # 스타일 스코프 이미지
                 ]
-                
+
                 img_url = None
                 for selector in img_selectors:
                     img_elem = item.select_one(selector)
                     if img_elem:
-                        # src 또는 data-src 속성에서 URL 추출 시도
-                        img_url = (
-                            img_elem.get("src") or 
-                            img_elem.get("data-src") or 
-                            img_elem.get("srcset", "").split()[0] if img_elem.get("srcset") else None  # srcset이 있는 경우만 split
-                        )
-                        if img_url:
-                            product_info["imageUrl"] = img_url
-                            logger.info(f"✅ 제품 이미지 URL 추출 성공: {img_url}")
-                            break
+                        # 채널 프로필 관련 키워드 체크
+                        img_class = img_elem.get('class', [])
+                        img_src = img_elem.get('src', '')
+                        img_alt = img_elem.get('alt', '')
+                        
+                        # 채널 프로필 이미지 제외 조건
+                        is_channel_image = any(keyword in str(img_class) + img_src + img_alt 
+                                            for keyword in ['avatar', 'channel', 'profile', 'user'])
+                        
+                        if not is_channel_image:
+                            img_url = (
+                                img_elem.get("src") or 
+                                img_elem.get("data-src") or 
+                                img_elem.get("srcset", "").split()[0] if img_elem.get("srcset") else None
+                            )
+                            if img_url and 'shopping' in img_url:  # shopping 관련 이미지인지 확인
+                                product_info["imageUrl"] = img_url
+                                logger.info(f"✅ 제품 이미지 URL 추출 성공 ({selector}): {img_url}")
+                                break
 
                 if not img_url:
-                    product_info["imageUrl"] = ""  # 이미지 URL이 없는 경우 빈 문자열로 설정
+                    product_info["imageUrl"] = ""
                     logger.warning(f"⚠️ 제품 이미지를 찾을 수 없습니다: {product_info.get('title', '제품명 없음')}")
 
                 # 5. 판매처 추출
@@ -660,6 +693,7 @@ def save_to_excel(df: pd.DataFrame, file_path: str):
     except Exception as e:
         logger.error(f"❌ 엑셀 저장 실패: {e}", exc_info=True)
 
+
 # ------------------------------------- ⬇️ DB에 저장하는 함수 ------------------------------
 def save_to_db(data: pd.DataFrame):
     """DataFrame을 DB에 저장하는 함수"""
@@ -725,16 +759,18 @@ def save_to_db(data: pd.DataFrame):
                 for _, product_row in video_products.iterrows():
                     product_name = product_row.get("product_name")
                     if product_name and pd.notna(product_name) and product_name.strip():
+                        # 가격을 정수로 변환
+                        price = parse_price(product_row.get("product_price", "0"))
                         product = YouTubeProduct.objects.create(
                             video=video_obj,
                             product_name=product_name,
-                            product_price=product_row.get("product_price", ""),
+                            product_price=price,
                             product_image_link=product_row.get("product_image_url", ""),
                             product_link=product_row.get("product_url", ""),
                             product_merchant=product_row.get("product_merchant", "")
                         )
                         saved_count += 1
-                        logger.info(f"✨ 제품 정보 저장: {product_name}")
+                        logger.info(f"✨ 제품 정보 저장: {product_name} (가격: {price:,}원)")
 
     except Exception as e:
         logger.error(f"❌ DB 저장 중 에러 발생: {e}", exc_info=True)
