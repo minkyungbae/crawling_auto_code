@@ -24,5 +24,8 @@ class YouTubeProduct(models.Model):
     product_merchant = models.CharField(max_length=100, blank=True)
     product_merchant_link = models.URLField(max_length=1000, blank=True)
 
+    class Meta:
+        unique_together = ('video', 'product_name')
+
     def __str__(self):
         return f"{self.product_name} ({self.product_price})"
