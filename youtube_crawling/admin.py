@@ -8,10 +8,10 @@ class YouTubeProductInline(admin.TabularInline):
 
 @admin.register(YouTubeVideo)
 class YouTubeVideoAdmin(admin.ModelAdmin):
-    list_display = ('title', 'channel_name', 'upload_date', 'view_count')
+    list_display = ('title', 'channel_name', 'upload_date', 'view_count', 'product_count')
     search_fields = ('title', 'channel_name')
     inlines = [YouTubeProductInline]
 
 @admin.register(YouTubeProduct)
 class YouTubeProductAdmin(admin.ModelAdmin):
-    list_display = ('product_name', 'product_price', 'product_link')
+    list_display = ('product_name', 'product_price', 'product_image_link', 'product_merchant', 'product_merchant_link')
