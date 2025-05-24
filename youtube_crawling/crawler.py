@@ -284,12 +284,13 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
         total_items = len(product_items)
         logger.info(f"총 {total_items}개의 제품 아이템을 찾았습니다.")
 
+
         # 250523 제품 정보 추출
         for item in product_items:
             try:
                 product_info = {}
 
-                # 1. 제품명 추출
+                '''제품명 추출'''
                 title_elem = item.select_one(".small-item-hide.product-item-title")
                 if title_elem and (title_text := title_elem.get_text(strip=True)):
                     product_info["title"] = title_text
@@ -298,13 +299,13 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                     logger.warning("⚠️ 제품명을 찾을 수 없어 다음 아이템으로 넘어갑니다")
                     continue
 
-                # 2. 제품 링크 추출
+                '''제품 링크 추출'''
                 link_elem = item.select_one("div.product-item-description")
                 if link_elem and (product_merchant_url := link_elem.get_text(strip=True)):
                     product_info["url"] = product_merchant_url
                     logger.info(f"✅ 제품 링크 추출 성공: {product_merchant_url}")
 
-                # 3. 가격 추출
+                '''가격 추출'''
                 price_elem = item.select_one(".product-item-price")
                 if price_elem and (price_text := price_elem.get_text(strip=True)):
                     product_info["price"] = price_text
@@ -313,7 +314,7 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                     logger.warning("⚠️ 가격 정보를 찾을 수 없어 다음 아이템으로 넘어갑니다")
                     continue
 
-                # 4. 이미지 URL 추출 (채널 프로필 제외)
+                '''이미지 URL 추출 (채널 프로필 제외)'''
                 img_selectors = [
                     # 기본 구조
                     "div.product-item yt-img-shadow img",
@@ -452,12 +453,8 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         
         # 250523 더보기 버튼 클릭 시도 (여러 셀렉터 시도)
         expand_button_selectors = [
-            "tp-yt-paper-button#expand",
-            "#expand",
-            "#expand-button",
-            "#more",
-            "ytd-button-renderer#more",
-            "ytd-expander#description [aria-label='더보기']",
+            "tp-yt-paper-button#expand", "#expand", "#expand-button", "#more",
+            "ytd-button-renderer#more", "ytd-expander#description [aria-label='더보기']",
             "ytd-expander[description-collapsed] #expand"
         ]
         
@@ -473,17 +470,11 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 
         # 250523 제품 섹션 선택지 추가
         product_selectors = [
-            "ytd-product-metadata-badge-renderer",
-            "ytd-merch-shelf-renderer",
-            "ytd-product-item-renderer",
-            "#product-shelf",
-            "#product-list",
-            "ytd-merch-product-renderer",
-            "#product-items",
-            ".product-item",
+            "ytd-product-metadata-badge-renderer", "ytd-merch-shelf-renderer",
+            "ytd-product-item-renderer","#product-shelf", "#product-list",
+            "ytd-merch-product-renderer", "#product-items", ".product-item",
             "#content ytd-metadata-row-container-renderer",
-            "ytd-metadata-row-renderer",
-            "#product-section"
+            "ytd-metadata-row-renderer", "#product-section"
         ]
         
         for selector in product_selectors:
@@ -499,7 +490,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         # 메타데이터 추출
         video_id = video_url.split("v=")[-1]
         
-        # 250522 제목 (여러 선택자 시도)
+        '''250522 제목 (여러 선택자 시도)'''
         title_selectors = [
             "h1.title yt-formatted-string",
             "h1.title",
@@ -516,7 +507,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         title = title or "제목 없음"
         logger.info(f"제목: {title}")
 
-        # 250522 채널명 (여러 선택자 시도)
+        '''250522 채널명 (여러 선택자 시도)'''
         channel_selectors = [
             "ytd-channel-name yt-formatted-string#text a",
             "ytd-channel-name a",
@@ -530,7 +521,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 break
         channel_name = channel_name or "채널 없음"
 
-        # 250522 구독자 수
+        '''250522 구독자 수'''
         sub_selectors = [
             "yt-formatted-string#owner-sub-count",
             "#subscriber-count"
@@ -543,7 +534,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 break
         subscriber_count = subscriber_count or "구독자 수 없음"
 
-        # 250522 조회수
+        '''250522 조회수'''
         view_selectors = [
             "span.view-count",
             "#view-count",
@@ -557,7 +548,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 break
         view_count = view_count or "조회수 없음"
 
-        # 250522 업로드일
+        '''250522 업로드일'''
         date_selectors = [
             "#info-strings yt-formatted-string",
             "#upload-info .date",
@@ -571,7 +562,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 break
         upload_date = upload_date or "날짜 없음"
 
-        # 250522 설명란
+        '''250522 설명란'''
         desc_selectors = [
             "ytd-expander#description yt-formatted-string",
             "#description",
@@ -588,7 +579,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         description = description or "설명 없음"
         logger.info(f"설명 길이: {len(description)} 글자")
 
-        # 250522 제품 추출
+        '''250522 제품 추출'''
         products = extract_products_from_dom(driver, soup)
         if products is None:  # None 체크 추가
             products = []
@@ -611,7 +602,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                     "extracted_date": today_str,
                     "video_url": video_url,
                     "description": description,
-                    "product_count": product_count,
+                    "product_count": len(product_count),
                     "product_name": product.get("title", ""),
                     "product_price": product.get("price", ""),
                     "product_image_url": product.get("imageUrl", ""),
