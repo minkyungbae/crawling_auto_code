@@ -57,6 +57,15 @@ class ChannelCrawlTriggerView(APIView):
             crawl_channel_videos.delay(url)
 
         return Response({"message": f"{len(channel_urls)}개의 크롤링이 시작되었습니다."}, status=202)
+    
+    @swagger_auto_schema(
+        operation_summary="크롤링한 유튜브 영상 전체 조회")
+    
+    def get(self, request):
+        """전체 영상 목록 조회"""
+        queryset = YouTubeVideo.objects.all().order_by('-extracted_date')
+        serializer = YouTubeVideoSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 # ------------------------------------- ⬇️ API CRUD 클래스 (전체 작업)-------------------------------
