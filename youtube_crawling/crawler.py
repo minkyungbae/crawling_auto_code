@@ -334,13 +334,33 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                 img_url = None
                 for selector in img_selectors:
                     try:
-                        img_elems = item.select(selector)  # select_one 대신 select 사용하여 모든 매칭되는 요소 찾기
+                        # WebDriverWait로 이미지 요소가 로드될 때까지 대기
+                        wait = WebDriverWait(driver, 10)
+                        img_elements = wait.until(
+                            EC.presence_of_all_elements_located((By.CSS_SELECTOR, selector))
+                        )
+                        
+                        # BeautifulSoup으로 현재 페이지의 HTML 파싱
+                        current_soup = BeautifulSoup(driver.page_source, "html.parser")
+                        img_elems = current_soup.select(selector)
+                        
                         for img_elem in img_elems:
                             # src 속성 확인
                             if img_elem.get('src'):
                                 img_url = img_elem.get('src')
                                 # 채널 아이콘이나 아바타 이미지 제외
                                 if not any(keyword in img_url.lower() for keyword in ['avatar', 'channel', 'profile']):
+                                    # 이미지가 실제로 로드될 때까지 대기
+                                    try:
+                                        wait.until(
+                                            lambda d: d.execute_script(
+                                                'return document.querySelector("' + selector + '").complete'
+                                            )
+                                        )
+                                    except Exception as e:
+                                        logger.debug(f"이미지 로딩 대기 중 에러: {e}")
+                                        continue
+                                        
                                     product_info["imageUrl"] = img_url
                                     logger.info(f"✅ 제품 이미지 URL 추출 성공 (src): {img_url}")
                                     break
@@ -348,6 +368,16 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                             elif img_elem.get('data-src'):
                                 img_url = img_elem.get('data-src')
                                 if not any(keyword in img_url.lower() for keyword in ['avatar', 'channel', 'profile']):
+                                    try:
+                                        wait.until(
+                                            lambda d: d.execute_script(
+                                                'return document.querySelector("' + selector + '").complete'
+                                            )
+                                        )
+                                    except Exception as e:
+                                        logger.debug(f"이미지 로딩 대기 중 에러: {e}")
+                                        continue
+                                        
                                     product_info["imageUrl"] = img_url
                                     logger.info(f"✅ 제품 이미지 URL 추출 성공 (data-src): {img_url}")
                                     break
@@ -355,6 +385,16 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                             elif img_elem.get('srcset'):
                                 srcset = img_elem.get('srcset').split(',')[0].split()[0]
                                 if srcset and not any(keyword in srcset.lower() for keyword in ['avatar', 'channel', 'profile']):
+                                    try:
+                                        wait.until(
+                                            lambda d: d.execute_script(
+                                                'return document.querySelector("' + selector + '").complete'
+                                            )
+                                        )
+                                    except Exception as e:
+                                        logger.debug(f"이미지 로딩 대기 중 에러: {e}")
+                                        continue
+                                        
                                     img_url = srcset
                                     product_info["imageUrl"] = img_url
                                     logger.info(f"✅ 제품 이미지 URL 추출 성공 (srcset): {img_url}")
