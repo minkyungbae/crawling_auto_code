@@ -333,6 +333,7 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
 
                 img_url = None
                 for selector in img_selectors:
+                    # 250524 WebDriverWait 추가
                     try:
                         # WebDriverWait로 이미지 요소가 로드될 때까지 대기
                         wait = WebDriverWait(driver, 10)
