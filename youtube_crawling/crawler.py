@@ -300,9 +300,9 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
 
                 # 2. 제품 링크 추출
                 link_elem = item.select_one("div.product-item-description")
-                if link_elem and (product_url := link_elem.get_text(strip=True)):
-                    product_info["url"] = product_url
-                    logger.info(f"✅ 제품 링크 추출 성공: {product_url}")
+                if link_elem and (product_merchant_url := link_elem.get_text(strip=True)):
+                    product_info["url"] = product_merchant_url
+                    logger.info(f"✅ 제품 링크 추출 성공: {product_merchant_url}")
 
                 # 3. 가격 추출
                 price_elem = item.select_one(".product-item-price")
@@ -318,7 +318,7 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                     # 기본 구조
                     "div.product-item yt-img-shadow img",
                     # 클래스 기반
-                    "yt-img-shadow.product-item-image img",
+                    "yt-img-shadow.product-item-image img#img",
                     # 스타일 스코프
                     ".product-item img.style-scope.yt-img-shadow",
                     # 컴포넌트 기반
@@ -516,7 +516,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         title = title or "제목 없음"
         logger.info(f"제목: {title}")
 
-        # 250522채널명 (여러 선택자 시도)
+        # 250522 채널명 (여러 선택자 시도)
         channel_selectors = [
             "ytd-channel-name yt-formatted-string#text a",
             "ytd-channel-name a",
@@ -615,7 +615,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                     "product_name": product.get("title", ""),
                     "product_price": product.get("price", ""),
                     "product_image_url": product.get("imageUrl", ""),
-                    "product_url": product.get("url", ""),
+                    "product_merchant_url": product.get("url", ""),
                     "product_merchant": product.get("merchant", "")
                 }
                 base_data.append(row_data)
@@ -635,7 +635,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 "product_name": "",
                 "product_price": "",
                 "product_image_url": "",
-                "product_url": "",
+                "product_merchant_url": "",
                 "product_merchant": ""
             })
 
@@ -823,7 +823,7 @@ def save_to_db(data: pd.DataFrame):
                             product_name=product_name,
                             product_price=price,
                             product_image_link=product_row.get("product_image_url", ""),
-                            product_link=product_row.get("product_url", ""),
+                            product_link=product_row.get("product_merchant_url", ""),
                             product_merchant=product_row.get("product_merchant", "")
                         )
                         saved_count += 1
