@@ -9,7 +9,7 @@ class YouTubeVideo(models.Model):
     title = models.CharField(max_length=255)
     view_count = models.CharField(max_length=255)
     video_url = models.URLField(unique=True)  # 중복 방지
-    product_count = models.CharField(max_length=255, null=True, blank=True)
+    product_count = models.IntegerField(null=True, blank=True, default=0)
     description = models.TextField()
 
     def __str__(self):
