@@ -315,38 +315,31 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
 
                 # 4. 이미지 URL 추출 (채널 프로필 제외)
                 img_selectors = [
-                    # 제품 섹션 내부의 이미지만 선택
-                    "div.product-item > yt-img-shadow:not([id*='avatar']):not([class*='channel']) > img",  # 기본 구조
-                    "yt-img-shadow.product-item-image:not([id*='avatar']):not([class*='channel']) img",    # 클래스 기반
-                    ".product-item yt-img-shadow:not([id*='avatar']) img:not([alt*='channel'])",           # 단순화된 구조
-                    "yt-img-shadow img[src*='shopping']:not([src*='channel'])",                            # shopping 관련 이미지
-                    "div.product-item img.style-scope.yt-img-shadow:not([class*='channel'])",              # 스타일 스코프
-                    "ytd-merch-shelf-item-renderer:not([class*='channel']) yt-img-shadow img",            # 컴포넌트 기반
-                    ".product-item-image.style-scope:not([class*='avatar']) img",                         # 스타일 스코프 이미지
+                    "div.product-item yt-img-shadow img[src*='shopping']",  # 기본 구조
+                    "yt-img-shadow.product-item-image img[src]",           # 클래스 기반
+                    ".product-item img.style-scope.yt-img-shadow",         # 스타일 스코프
+                    "ytd-merch-shelf-item-renderer yt-img-shadow img",     # 컴포넌트 기반
                 ]
 
                 img_url = None
                 for selector in img_selectors:
                     img_elem = item.select_one(selector)
-                    if img_elem:
-                        # 채널 프로필 관련 키워드 체크
-                        img_class = img_elem.get('class', [])
-                        img_src = img_elem.get('src', '')
-                        img_alt = img_elem.get('alt', '')
-                        
-                        # 채널 프로필 이미지 제외 조건
-                        is_channel_image = any(keyword in str(img_class) + img_src + img_alt 
-                                            for keyword in ['avatar', 'channel', 'profile', 'user'])
-                        
-                        if not is_channel_image:
-                            img_url = (
-                                img_elem.get("src") or 
-                                img_elem.get("data-src") or 
-                                img_elem.get("srcset", "").split()[0] if img_elem.get("srcset") else None
-                            )
-                            if img_url and 'shopping' in img_url:  # shopping 관련 이미지인지 확인
+                    if img_elem and img_elem.get('src'):
+                        img_url = img_elem.get('src')
+                        if img_url:
+                            product_info["imageUrl"] = img_url
+                            logger.info(f"✅ 제품 이미지 URL 추출 성공 ({selector}): {img_url}")
+                            break
+
+                if not img_url:
+                    # 이미지를 찾지 못한 경우 data-src 속성도 확인
+                    for selector in img_selectors:
+                        img_elem = item.select_one(selector.replace('[src]', '[data-src]'))
+                        if img_elem and img_elem.get('data-src'):
+                            img_url = img_elem.get('data-src')
+                            if img_url:
                                 product_info["imageUrl"] = img_url
-                                logger.info(f"✅ 제품 이미지 URL 추출 성공 ({selector}): {img_url}")
+                                logger.info(f"✅ 제품 이미지 URL 추출 성공 (data-src): {img_url}")
                                 break
 
                 if not img_url:
