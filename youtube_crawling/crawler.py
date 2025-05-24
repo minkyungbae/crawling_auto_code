@@ -315,32 +315,55 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
 
                 # 4. 이미지 URL 추출 (채널 프로필 제외)
                 img_selectors = [
-                    "div.product-item yt-img-shadow img[src*='shopping']",  # 기본 구조
-                    "yt-img-shadow.product-item-image img[src]",           # 클래스 기반
-                    ".product-item img.style-scope.yt-img-shadow",         # 스타일 스코프
-                    "ytd-merch-shelf-item-renderer yt-img-shadow img",     # 컴포넌트 기반
+                    # 기본 구조
+                    "div.product-item yt-img-shadow img",
+                    # 클래스 기반
+                    "yt-img-shadow.product-item-image img",
+                    # 스타일 스코프
+                    ".product-item img.style-scope.yt-img-shadow",
+                    # 컴포넌트 기반
+                    "ytd-merch-shelf-item-renderer yt-img-shadow img",
+                    # 직접적인 이미지 선택
+                    ".product-item-image img",
+                    # 일반적인 제품 이미지
+                    "img[src*='shopping']",
+                    # 단순 이미지 선택
+                    "yt-img-shadow img"
                 ]
 
                 img_url = None
                 for selector in img_selectors:
-                    img_elem = item.select_one(selector)
-                    if img_elem and img_elem.get('src'):
-                        img_url = img_elem.get('src')
-                        if img_url:
-                            product_info["imageUrl"] = img_url
-                            logger.info(f"✅ 제품 이미지 URL 추출 성공 ({selector}): {img_url}")
+                    try:
+                        img_elems = item.select(selector)  # select_one 대신 select 사용하여 모든 매칭되는 요소 찾기
+                        for img_elem in img_elems:
+                            # src 속성 확인
+                            if img_elem.get('src'):
+                                img_url = img_elem.get('src')
+                                # 채널 아이콘이나 아바타 이미지 제외
+                                if not any(keyword in img_url.lower() for keyword in ['avatar', 'channel', 'profile']):
+                                    product_info["imageUrl"] = img_url
+                                    logger.info(f"✅ 제품 이미지 URL 추출 성공 (src): {img_url}")
+                                    break
+                            # data-src 속성 확인
+                            elif img_elem.get('data-src'):
+                                img_url = img_elem.get('data-src')
+                                if not any(keyword in img_url.lower() for keyword in ['avatar', 'channel', 'profile']):
+                                    product_info["imageUrl"] = img_url
+                                    logger.info(f"✅ 제품 이미지 URL 추출 성공 (data-src): {img_url}")
+                                    break
+                            # srcset 속성 확인
+                            elif img_elem.get('srcset'):
+                                srcset = img_elem.get('srcset').split(',')[0].split()[0]
+                                if srcset and not any(keyword in srcset.lower() for keyword in ['avatar', 'channel', 'profile']):
+                                    img_url = srcset
+                                    product_info["imageUrl"] = img_url
+                                    logger.info(f"✅ 제품 이미지 URL 추출 성공 (srcset): {img_url}")
+                                    break
+                        if img_url:  # 이미지를 찾았다면 외부 루프도 종료
                             break
-
-                if not img_url:
-                    # 이미지를 찾지 못한 경우 data-src 속성도 확인
-                    for selector in img_selectors:
-                        img_elem = item.select_one(selector.replace('[src]', '[data-src]'))
-                        if img_elem and img_elem.get('data-src'):
-                            img_url = img_elem.get('data-src')
-                            if img_url:
-                                product_info["imageUrl"] = img_url
-                                logger.info(f"✅ 제품 이미지 URL 추출 성공 (data-src): {img_url}")
-                                break
+                    except Exception as e:
+                        logger.debug(f"이미지 선택자 {selector} 처리 중 에러 발생: {e}")
+                        continue
 
                 if not img_url:
                     product_info["imageUrl"] = ""
