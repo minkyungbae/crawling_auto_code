@@ -334,13 +334,18 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
 
                 img_url = None
                 for selector in img_selectors:
-                    # 250524 WebDriverWait 추가
+                    # 250525 WebDriverWait 시간 수정
                     try:
-                        # WebDriverWait로 이미지 요소가 로드될 때까지 대기
-                        wait = WebDriverWait(driver, 10)
+                        # WebDriverWait 시간 증가 (10초에서 20초로)
+                        wait = WebDriverWait(driver, 20)
+                        
+                        # 이미지 요소가 존재할 때까지 대기
                         img_elements = wait.until(
                             EC.presence_of_all_elements_located((By.CSS_SELECTOR, selector))
                         )
+                        
+                        # 이미지가 실제로 로드될 때까지 추가 대기
+                        time.sleep(2)
                         
                         # BeautifulSoup으로 현재 페이지의 HTML 파싱
                         current_soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -356,9 +361,10 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                                     try:
                                         wait.until(
                                             lambda d: d.execute_script(
-                                                'return document.querySelector("' + selector + '").complete'
+                                                'return document.querySelector("' + selector + '").complete && document.querySelector("' + selector + '").naturalHeight > 0'
                                             )
                                         )
+                                        time.sleep(1)  # 추가 안정성을 위한 대기
                                     except Exception as e:
                                         logger.debug(f"이미지 로딩 대기 중 에러: {e}")
                                         continue
@@ -441,13 +447,13 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
 
     try:
         driver.get(video_url)
-        # 페이지 로딩 대기 시간
-        time.sleep(3)
+        # 250525 페이지 로딩 대기 시간 증가
+        time.sleep(5)  # 3초에서 5초로 증가
         
         # 페이지 스크롤을 여러 번 수행하여 동적 컨텐츠 로드
-        for _ in range(3):
+        for _ in range(5):  # 3회에서 5회로 증가
             driver.execute_script("window.scrollTo(0, window.scrollY + 500);")
-            time.sleep(2)
+            time.sleep(3)  # 2초에서 3초로 증가
         
         wait = WebDriverWait(driver, 20)
         
