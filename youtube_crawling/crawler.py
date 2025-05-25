@@ -696,7 +696,7 @@ def update_youtube_data_to_db(dataframe: pd.DataFrame) -> int:
                     defaults={
                         "product_price": row.get('price'),
                         "product_image_link": row.get('imageUrl'),
-                        "product_link": row.get('url')
+                        "product_merchant_link": row.get('url')
                     }
                 )
         logger.info(f"🔁 영상 정보 업데이트 완료: {video_id}")
@@ -814,7 +814,7 @@ def save_to_db(data: pd.DataFrame):
                             product_name=product_name,
                             product_price=price,
                             product_image_link=product_row.get("product_image_url", ""),
-                            product_link=product_row.get("product_merchant_url", ""),
+                            product_merchant_link=product_row.get("product_merchant_url", ""),
                             product_merchant=product_row.get("product_merchant", "")
                         )
                         saved_count += 1
