@@ -608,7 +608,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                     "extracted_date": today_str,
                     "video_url": video_url,
                     "description": description,
-                    "product_count": len(product_count),
+                    "product_count": product_count,
                     "product_name": product.get("title", ""),
                     "product_price": product.get("price", ""),
                     "product_image_url": product.get("imageUrl", ""),
