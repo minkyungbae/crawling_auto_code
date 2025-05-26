@@ -638,7 +638,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 "extracted_date": today_str,
                 "video_url": video_url,
                 "description": description,
-                "product_count": 0,
+                "product_count": product_count,
                 "product_name": "",
                 "product_price": "",
                 "product_image_url": "",
@@ -754,24 +754,27 @@ def save_to_db(data: pd.DataFrame):
     try:
         with transaction.atomic():
             # 각 고유한 video_id에 대해 한 번만 처리
-            unique_videos = data.drop_duplicates(subset=['youtube_id'])
-            
-            for _, row in unique_videos.iterrows():
-                video_id = row.get("youtube_id")
+            for video_id, video_group in data.groupby('youtube_id'):
                 if not video_id:
                     logger.warning("⚠️ video_id 없음, 건너뜁니다")
                     continue
 
+                # 첫 번째 행에서 비디오 정보 가져오기
+                first_row = video_group.iloc[0]
+                
                 # 날짜 형식 변환
-                extracted_date = format_date(row.get("extracted_date", ""))
-                upload_date = format_date(row.get("upload_date", ""))
+                extracted_date = format_date(first_row.get("extracted_date", ""))
+                upload_date = format_date(first_row.get("upload_date", ""))
                 
                 # 구독자 수와 조회수를 정수로 변환
-                subscriber_count = parse_subscriber_count(row.get("subscribers", "0"))
-                view_count = parse_view_count(row.get("view_count", "0"))
+                subscriber_count = parse_subscriber_count(first_row.get("subscribers", "0"))
+                view_count = parse_view_count(first_row.get("view_count", "0"))
                 
                 # 설명란 정리
-                description = clean_description(row.get("description", ""))
+                description = clean_description(first_row.get("description", ""))
+                
+                # product_count는 HTML에서 추출한 값 사용
+                product_count = first_row.get("product_count", 0)
 
                 # 영상 정보 생성 또는 업데이트
                 video_obj, created = YouTubeVideo.objects.update_or_create(
@@ -779,12 +782,12 @@ def save_to_db(data: pd.DataFrame):
                     defaults={
                         "extracted_date": extracted_date,
                         "upload_date": upload_date,
-                        "channel_name": row.get("channel_name"),
+                        "channel_name": first_row.get("channel_name"),
                         "subscriber_count": subscriber_count,
-                        "title": row.get("title"),
+                        "title": first_row.get("title"),
                         "view_count": view_count,
-                        "video_url": row.get("video_url"),
-                        "product_count": row.get("product_count", 0),
+                        "video_url": first_row.get("video_url"),
+                        "product_count": product_count,  # HTML에서 추출한 값 사용
                         "description": description,
                     }
                 )
@@ -795,33 +798,25 @@ def save_to_db(data: pd.DataFrame):
                     logger.info(f"🔄 기존 영상 업데이트: {video_id}")
                     updated_count += 1
 
-                # 해당 video_id를 가진 모든 제품 정보 처리
-                video_products = data[data['youtube_id'] == video_id]
-                
                 # 기존 제품 정보 삭제
                 video_obj.products.all().delete()
                 
-                # 새로운 제품 정보 저장
-                for _, product_row in video_products.iterrows():
-                    product_name = product_row.get("product_name")
+                # 제품 정보가 있는 행만 처리
+                for _, row in video_group.iterrows():
+                    product_name = row.get("product_name")
                     if product_name and pd.notna(product_name) and product_name.strip():
                         # 가격을 정수로 변환
-                        price = parse_price(product_row.get("product_price", "0"))
-                        product, created = YouTubeProduct.objects.update_or_create(
+                        price = parse_price(row.get("product_price", "0"))
+                        product = YouTubeProduct.objects.create(
                             video=video_obj,
                             product_name=product_name,
-                            defaults={
-                                "product_price": price,
-                                "product_image_link": product_row.get("product_image_url", ""),
-                                "product_merchant": product_row.get("product_merchant", ""),
-                                "product_merchant_link": product_row.get("product_merchant_url", "")
-                            }
+                            product_price=price,
+                            product_image_link=row.get("product_image_url", ""),
+                            product_merchant=row.get("product_merchant", ""),
+                            product_merchant_link=row.get("product_merchant_url", "")
                         )
                         saved_count += 1
-                        if created:
-                            logger.info(f"✨ 새로운 제품 정보 저장: {product_name} (가격: {price:,}원)")
-                        else:
-                            logger.info(f"🔄 기존 제품 정보 업데이트: {product_name} (가격: {price:,}원)")
+                        logger.info(f"✨ 제품 정보 저장: {product_name} (가격: {price:,}원)")
 
     except Exception as e:
         logger.error(f"❌ DB 저장 중 에러 발생: {e}", exc_info=True)
