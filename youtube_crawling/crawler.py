@@ -1,6 +1,5 @@
 # --------- 프로젝트에서 import한 목록 ---------------
-from .models import YouTubeVideo, YouTubeProduct
-from config import settings
+from youtube_crawling.models import YouTubeVideo, YouTubeProduct
 # --------- selenium에서 import한 목록 ---------------
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -261,7 +260,7 @@ def click_description(driver) -> str:
     
     
 #--------------------------------------- 제품 정보 추출 -------------------------------------
-def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
+def extract_products_from_dom(driver) -> list[dict]:
     products = []
     try:
         # 더보기 버튼 클릭 시도
@@ -275,156 +274,65 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
         except Exception as e:
             logger.info(f"더보기 버튼 클릭 실패 (이미 펼쳐져 있을 수 있음): {e}")
 
-        # 제품 섹션 찾기 (JS Path 기반)
-        product_items = soup.select("#items > ytd-merch-shelf-item-renderer")
-        if not product_items:
-            logger.warning("제품 아이템을 찾을 수 없습니다.")
-            return []
-
+        # 제품 아이템 찾기
+        product_items = driver.find_elements(By.CSS_SELECTOR, "#items > ytd-merch-shelf-item-renderer")
         total_items = len(product_items)
         logger.info(f"총 {total_items}개의 제품 아이템을 찾았습니다.")
 
-
-        # 250523 제품 정보 추출
+        '''250526 제품 정보 추출 수정'''
         for item in product_items:
             try:
                 product_info = {}
 
-                '''제품명 추출'''
-                title_elem = item.select_one(".small-item-hide.product-item-title")
-                if title_elem and (title_text := title_elem.get_text(strip=True)):
-                    product_info["title"] = title_text
-                    logger.info(f"✅ 제품명 추출 성공: {title_text}")
+                '''250526 제품명 추출'''
+                title_elem = item.find_element(By.CSS_SELECTOR, ".small-item-hide.product-item-title")
+                if title_elem:
+                    product_info["title"] = title_elem.text.strip()
+                    logger.info(f"✅ 제품명 추출 성공: {product_info['title']}")
                 else:
                     logger.warning("⚠️ 제품명을 찾을 수 없어 다음 아이템으로 넘어갑니다")
                     continue
 
-                '''제품 링크 추출'''
-                link_elem = item.select_one("div.product-item-description")
-                if link_elem and (product_merchant_url := link_elem.get_text(strip=True)):
-                    product_info["url"] = product_merchant_url
-                    logger.info(f"✅ 제품 링크 추출 성공: {product_merchant_url}")
+                '''250526 제품 링크 추출'''
+                link_elem = item.find_element(By.CSS_SELECTOR, "div.product-item-description")
+                if link_elem:
+                    product_info["url"] = link_elem.text.strip()
+                    logger.info(f"✅ 제품 링크 추출 성공: {product_info['url']}")
 
-                '''가격 추출'''
-                price_elem = item.select_one(".product-item-price")
-                if price_elem and (price_text := price_elem.get_text(strip=True)):
-                    product_info["price"] = price_text
-                    logger.info(f"✅ 제품 가격 추출 성공: {price_text}")
+                '''250526 가격 추출'''
+                price_elem = item.find_element(By.CSS_SELECTOR, ".product-item-price")
+                if price_elem:
+                    product_info["price"] = price_elem.text.strip()
+                    logger.info(f"✅ 제품 가격 추출 성공: {product_info['price']}")
                 else:
                     logger.warning("⚠️ 가격 정보를 찾을 수 없어 다음 아이템으로 넘어갑니다")
                     continue
 
-                '''이미지 URL 추출 (채널 프로필 제외)'''
-                img_selectors = [
-                    # 기본 구조
-                    "div.product-item yt-img-shadow img",
-                    # 클래스 기반
-                    "yt-img-shadow.product-item-image img#img",
-                    # 스타일 스코프
-                    ".product-item img.style-scope.yt-img-shadow",
-                    # 컴포넌트 기반
-                    "ytd-merch-shelf-item-renderer yt-img-shadow img",
-                    # 직접적인 이미지 선택
-                    ".product-item-image img",
-                    # 일반적인 제품 이미지
-                    "img[src*='shopping']",
-                    # 단순 이미지 선택
-                    "yt-img-shadow img"
-                ]
-
-                img_url = None
-                for selector in img_selectors:
-                    # 250525 WebDriverWait 시간 수정
-                    try:
-                        # WebDriverWait 시간 증가 (10초에서 20초로)
-                        wait = WebDriverWait(driver, 20)
-                        
-                        # 이미지 요소가 존재할 때까지 대기
-                        img_elements = wait.until(
-                            EC.presence_of_all_elements_located((By.CSS_SELECTOR, selector))
-                        )
-                        
-                        # 이미지가 실제로 로드될 때까지 추가 대기
-                        time.sleep(2)
-                        
-                        # BeautifulSoup으로 현재 페이지의 HTML 파싱
-                        current_soup = BeautifulSoup(driver.page_source, "html.parser")
-                        img_elems = current_soup.select(selector)
-                        
-                        for img_elem in img_elems:
-                            # src 속성 확인
-                            if img_elem.get('src'):
-                                img_url = img_elem.get('src')
-                                # 채널 아이콘이나 아바타 이미지 제외
-                                if not any(keyword in img_url.lower() for keyword in ['avatar', 'channel', 'profile']):
-                                    # 이미지가 실제로 로드될 때까지 대기
-                                    try:
-                                        wait.until(
-                                            lambda d: d.execute_script(
-                                                'return document.querySelector("' + selector + '").complete && document.querySelector("' + selector + '").naturalHeight > 0'
-                                            )
-                                        )
-                                        time.sleep(1)  # 추가 안정성을 위한 대기
-                                    except Exception as e:
-                                        logger.debug(f"이미지 로딩 대기 중 에러: {e}")
-                                        continue
-                                        
-                                    product_info["imageUrl"] = img_url
-                                    logger.info(f"✅ 제품 이미지 URL 추출 성공 (src): {img_url}")
-                                    break
-                            # data-src 속성 확인
-                            elif img_elem.get('data-src'):
-                                img_url = img_elem.get('data-src')
-                                if not any(keyword in img_url.lower() for keyword in ['avatar', 'channel', 'profile']):
-                                    try:
-                                        wait.until(
-                                            lambda d: d.execute_script(
-                                                'return document.querySelector("' + selector + '").complete'
-                                            )
-                                        )
-                                    except Exception as e:
-                                        logger.debug(f"이미지 로딩 대기 중 에러: {e}")
-                                        continue
-                                        
-                                    product_info["imageUrl"] = img_url
-                                    logger.info(f"✅ 제품 이미지 URL 추출 성공 (data-src): {img_url}")
-                                    break
-                            # srcset 속성 확인
-                            elif img_elem.get('srcset'):
-                                srcset = img_elem.get('srcset').split(',')[0].split()[0]
-                                if srcset and not any(keyword in srcset.lower() for keyword in ['avatar', 'channel', 'profile']):
-                                    try:
-                                        wait.until(
-                                            lambda d: d.execute_script(
-                                                'return document.querySelector("' + selector + '").complete'
-                                            )
-                                        )
-                                    except Exception as e:
-                                        logger.debug(f"이미지 로딩 대기 중 에러: {e}")
-                                        continue
-                                        
-                                    img_url = srcset
-                                    product_info["imageUrl"] = img_url
-                                    logger.info(f"✅ 제품 이미지 URL 추출 성공 (srcset): {img_url}")
-                                    break
-                        if img_url:  # 이미지를 찾았다면 외부 루프도 종료
-                            break
-                    except Exception as e:
-                        logger.debug(f"이미지 선택자 {selector} 처리 중 에러 발생: {e}")
-                        continue
-
-                if not img_url:
+                '''250526 이미지 URL 추출'''
+                try:
+                    img_elem = item.find_element(By.CSS_SELECTOR, "img.style-scope.yt-img-shadow")
+                    img_url = img_elem.get_attribute("src")
+                    if img_url and not any(keyword in img_url.lower() for keyword in ['avatar', 'channel', 'profile']):
+                        product_info["imageUrl"] = img_url
+                        logger.info(f"✅ 제품 이미지 URL 추출 성공: {img_url}")
+                    else:
+                        product_info["imageUrl"] = ""
+                        logger.warning("⚠️ 채널 프로필 이미지로 판단되어 제외됨")
+                except Exception as e:
+                    logger.error(f"❌ 이미지 URL 추출 중 에러 발생: {e}")
                     product_info["imageUrl"] = ""
-                    logger.warning(f"⚠️ 제품 이미지를 찾을 수 없습니다: {product_info.get('title', '제품명 없음')}")
 
-                # 5. 판매처 추출
-                merchant_elem = item.select_one(".product-item-merchant-text")
-                if merchant_elem and (merchant_text := merchant_elem.get_text(strip=True)):
-                    merchant_name = merchant_text.replace("!", "").strip()
-                    product_info["merchant"] = merchant_name
-                    logger.info(f"✅ 판매처 추출 성공: {merchant_name}")
+                '''250526 판매처 추출'''
+                try:
+                    merchant_elem = item.find_element(By.CSS_SELECTOR, ".product-item-merchant-text")
+                    if merchant_elem:
+                        merchant_name = merchant_elem.text.strip().replace("!", "")
+                        product_info["merchant"] = merchant_name
+                        logger.info(f"✅ 판매처 추출 성공: {merchant_name}")
+                except Exception:
+                    product_info["merchant"] = ""
 
-                # 제품명과 가격만 있어도 저장
+                # 제품명과 가격이 있는 경우만 저장
                 if "title" in product_info and "price" in product_info:
                     products.append(product_info)
                     logger.info(f"✅ 제품 정보 추출 완료: {product_info['title']} ({product_info['price']})")
@@ -598,7 +506,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         logger.info(f"설명 길이: {len(description)} 글자")
 
         '''250522 제품 추출'''
-        products = extract_products_from_dom(driver, soup)
+        products = extract_products_from_dom(driver)
         if products is None:  # None 체크 추가
             products = []
         product_count = len(products)
@@ -827,16 +735,21 @@ def save_to_db(data: pd.DataFrame):
                     if product_name and pd.notna(product_name) and product_name.strip():
                         # 가격을 정수로 변환
                         price = parse_price(product_row.get("product_price", "0"))
-                        product = YouTubeProduct.objects.create(
+                        product, created = YouTubeProduct.objects.update_or_create(
                             video=video_obj,
                             product_name=product_name,
-                            product_price=price,
-                            product_image_link=product_row.get("product_image_url", ""),
-                            product_merchant_link=product_row.get("product_merchant_url", ""),
-                            product_merchant=product_row.get("product_merchant", "")
+                            defaults={
+                                "product_price": price,
+                                "product_image_link": product_row.get("product_image_url", ""),
+                                "product_merchant_link": product_row.get("product_merchant_url", ""),
+                                "product_merchant": product_row.get("product_merchant", "")
+                            }
                         )
                         saved_count += 1
-                        logger.info(f"✨ 제품 정보 저장: {product_name} (가격: {price:,}원)")
+                        if created:
+                            logger.info(f"✨ 새로운 제품 정보 저장: {product_name} (가격: {price:,}원)")
+                        else:
+                            logger.info(f"🔄 기존 제품 정보 업데이트: {product_name} (가격: {price:,}원)")
 
     except Exception as e:
         logger.error(f"❌ DB 저장 중 에러 발생: {e}", exc_info=True)
