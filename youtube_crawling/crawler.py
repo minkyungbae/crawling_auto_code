@@ -325,24 +325,12 @@ def extract_products_from_dom(driver) -> list[dict]:
 
                 '''250526 판매처 추출'''
                 try:
-                    merchant_selectors = [
-                        "#merchant-name",  # 새로운 셀렉터 추가
-                        ".product-item-merchant-text"  # 기존 셀렉터 유지
-                    ]
-                    merchant_name = ""
-                    for selector in merchant_selectors:
-                        merchant_elem = item.find_element(By.CSS_SELECTOR, selector)
-                        if merchant_elem:
-                            merchant_name = merchant_elem.text.strip()
-                            # 느낌표 제거 및 추가 공백 제거
-                            merchant_name = merchant_name.replace("!", "").strip()
-                            if merchant_name:  # 유효한 판매처 이름을 찾았다면
-                                break
-                    
-                    product_info["merchant"] = merchant_name
-                    logger.info(f"✅ 판매처 추출 성공: {merchant_name}")
-                except Exception as e:
-                    logger.warning(f"⚠️ 판매처 추출 실패: {e}")
+                    merchant_elem = item.find_element(By.CSS_SELECTOR, ".product-item-merchant-text")
+                    if merchant_elem:
+                        merchant_name = merchant_elem.text.strip().replace("!", "")
+                        product_info["merchant"] = merchant_name
+                        logger.info(f"✅ 판매처 추출 성공: {merchant_name}")
+                except Exception:
                     product_info["merchant"] = ""
 
                 # 제품명과 가격이 있는 경우만 저장
