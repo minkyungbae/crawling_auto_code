@@ -504,14 +504,14 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         logger.info(f"설명 길이: {len(description)} 글자")
 
         '''250522 제품 추출'''
-        products = extract_products_from_dom(driver)
+        products = extract_products_from_dom(driver, soup)
         if products is None:  # None 체크 추가
             products = []
             
         # 제품 개수 추출
         try:
-            product_count_elem = driver.find_element(By.CSS_SELECTOR, "#product-count")
-            product_count = parse_product_count(product_count_elem.text)
+            product_count_elem = soup.select_one("#product-count")
+            product_count = parse_product_count(product_count_elem.text if product_count_elem else "")
             if product_count is None:  # parse_product_count가 None을 반환한 경우
                 product_count = 0
         except Exception as e:
