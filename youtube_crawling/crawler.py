@@ -136,7 +136,7 @@ def parse_view_count(text: str) -> int:
         
         # 백 단위가 있는 경우
         if "천" in cleaned:
-            number = float(cleaned.replace("백", ""))
+            number = float(cleaned.replace("천", ""))
             return int(number * 1000)
         # 만 단위가 있는 경우
         elif "만" in cleaned:
@@ -152,7 +152,8 @@ def parse_view_count(text: str) -> int:
 # -------------- ⬇️ 구독자 수 텍스트를 숫자 형태로 변환 (예: 1.2만명 -> 12000) ------------------
 def parse_subscriber_count(text: str) -> int:
     try:
-        # 구독자와 명을 제거하고 숫자와 소수점, 단위(천, 만)만 남김
+        if not text:
+            return 0
         text = text.replace("구독자", "").replace("명", "").replace(",", "").strip()
         
         if "천" in text:
@@ -161,10 +162,13 @@ def parse_subscriber_count(text: str) -> int:
         elif "만" in text:
             number = float(text.replace("만", ""))
             return int(number * 10000)
+        elif "억" in text:
+            number = float(text.replace("억", ""))
+            return int(number * 100000000)
         
-        return int(text)
+        return int(text) if text.strip().isdigit() else 0
     except Exception as e:
-        logger.warning(f"⚠️ 구독자 수 파싱 실패: '{text}', 이유: {e}")
+        logger.error(f"❌ 구독자 수 변환 실패: {text}, 에러: {e}")
         return 0
     
     
@@ -185,20 +189,24 @@ def parse_price(price_text: str) -> int:
 
 
 # ---------------------- ⬇️ 날짜를 YYYY-MM-DD 형식으로 변환 ----------------------
-def format_date(date_str: str) -> str:
+def format_date(date_str: str) -> datetime:
+    """날짜 문자열을 datetime 객체로 변환"""
     try:
         if match := re.search(r'(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.?', date_str):
             year, month, day = match.groups()
-            return f"{year}-{int(month):02d}-{int(day):02d}"
+            return datetime(int(year), int(month), int(day))
         elif match := re.search(r'(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일', date_str):
             year, month, day = match.groups()
-            return f"{year}-{int(month):02d}-{int(day):02d}"
+            return datetime(int(year), int(month), int(day))
         elif match := re.search(r'(\d{4})(\d{2})(\d{2})', date_str):
             year, month, day = match.groups()
-            return f"{year}-{month}-{day}"
+            return datetime(int(year), int(month), int(day))
+        else:
+            logger.warning(f"⚠️ 날짜 형식을 인식할 수 없음: {date_str}, 현재 날짜 사용")
+            return datetime.now()
     except Exception as e:
-        logger.warning(f"⚠️ 날짜 형식 변환 실패: {date_str}, 에러: {e}")
-    return date_str
+        logger.error(f"❌ 날짜 변환 실패: {date_str}, 에러: {e}")
+        return datetime.now()
 
 
 # ---------------------- ⬇️ 설명란의 불필요한 줄바꿈 제거 ----------------------
@@ -712,7 +720,8 @@ def update_youtube_data_to_db(dataframe: pd.DataFrame) -> int:
                     defaults={
                         "product_price": row.get('price'),
                         "product_image_link": row.get('imageUrl'),
-                        "product_merchant_link": row.get('url')
+                        "product_merchant_link": row.get('url'),
+                        "product_merchant": row.get('merchant', '')
                     }
                 )
         logger.info(f"🔁 영상 정보 업데이트 완료: {video_id}")
@@ -743,7 +752,6 @@ def get_channel_name(driver, channel_url):
 
 # ------------------------------------- ⬇️ DB에 저장하는 함수 ------------------------------
 def save_to_db(data: pd.DataFrame):
-    """DataFrame을 DB에 저장하는 함수"""
     if data is None or data.empty:
         logger.warning("⚠️ 저장할 데이터가 없습니다.")
         return 0
@@ -753,70 +761,81 @@ def save_to_db(data: pd.DataFrame):
     
     try:
         with transaction.atomic():
-            # 각 고유한 video_id에 대해 한 번만 처리
             for video_id, video_group in data.groupby('youtube_id'):
                 if not video_id:
                     logger.warning("⚠️ video_id 없음, 건너뜁니다")
                     continue
 
-                # 첫 번째 행에서 비디오 정보 가져오기
                 first_row = video_group.iloc[0]
                 
-                # 날짜 형식 변환
-                extracted_date = format_date(first_row.get("extracted_date", ""))
-                upload_date = format_date(first_row.get("upload_date", ""))
-                
-                # 구독자 수와 조회수를 정수로 변환
-                subscriber_count = parse_subscriber_count(first_row.get("subscribers", "0"))
-                view_count = parse_view_count(first_row.get("view_count", "0"))
-                
-                # 설명란 정리
-                description = clean_description(first_row.get("description", ""))
-                
-                # product_count는 HTML에서 추출한 값 사용
-                product_count = first_row.get("product_count", 0)
+                try:
+                    # 날짜 변환
+                    extracted_date = format_date(first_row.get("extracted_date", ""))
+                    upload_date = format_date(first_row.get("upload_date", ""))
+                    
+                    # 숫자 데이터 변환
+                    subscriber_count = parse_subscriber_count(first_row.get("subscribers", "0"))
+                    view_count = parse_view_count(first_row.get("view_count", "0"))
+                    product_count = int(first_row.get("product_count", 0))
+                    
+                    # URL 검증
+                    video_url = validate_url(first_row.get("video_url", ""))
+                    
+                    # 영상 정보 생성 또는 업데이트
+                    video_obj, created = YouTubeVideo.objects.update_or_create(
+                        video_id=video_id,
+                        defaults={
+                            "extracted_date": extracted_date,
+                            "upload_date": upload_date,
+                            "channel_name": first_row.get("channel_name", ""),
+                            "subscriber_count": subscriber_count,
+                            "title": first_row.get("title", ""),
+                            "view_count": view_count,
+                            "video_url": video_url,
+                            "product_count": product_count,
+                            "description": clean_description(first_row.get("description", "")),
+                        }
+                    )
 
-                # 영상 정보 생성 또는 업데이트
-                video_obj, created = YouTubeVideo.objects.update_or_create(
-                    video_id=video_id,
-                    defaults={
-                        "extracted_date": extracted_date,
-                        "upload_date": upload_date,
-                        "channel_name": first_row.get("channel_name"),
-                        "subscriber_count": subscriber_count,
-                        "title": first_row.get("title"),
-                        "view_count": view_count,
-                        "video_url": first_row.get("video_url"),
-                        "product_count": product_count,  # HTML에서 추출한 값 사용
-                        "description": description,
-                    }
-                )
+                    if created:
+                        logger.info(f"✨ 새로운 영상 생성: {video_id}")
+                    else:
+                        logger.info(f"🔄 기존 영상 업데이트: {video_id}")
+                        updated_count += 1
 
-                if created:
-                    logger.info(f"✨ 새로운 영상 생성: {video_id}")
-                else:
-                    logger.info(f"🔄 기존 영상 업데이트: {video_id}")
-                    updated_count += 1
-
-                # 기존 제품 정보 삭제
-                video_obj.products.all().delete()
-                
-                # 제품 정보가 있는 행만 처리
-                for _, row in video_group.iterrows():
-                    product_name = row.get("product_name")
-                    if product_name and pd.notna(product_name) and product_name.strip():
-                        # 가격을 정수로 변환
-                        price = parse_price(row.get("product_price", "0"))
-                        product = YouTubeProduct.objects.create(
-                            video=video_obj,
-                            product_name=product_name,
-                            product_price=price,
-                            product_image_link=row.get("product_image_url", ""),
-                            product_merchant=row.get("product_merchant", ""),
-                            product_merchant_link=row.get("product_merchant_url", "")
-                        )
-                        saved_count += 1
-                        logger.info(f"✨ 제품 정보 저장: {product_name} (가격: {price:,}원)")
+                    # 기존 제품 정보 삭제
+                    video_obj.products.all().delete()
+                    
+                    # 제품 정보 처리
+                    for _, row in video_group.iterrows():
+                        product_name = row.get("product_name", "").strip()
+                        if product_name:
+                            try:
+                                price = parse_price(row.get("product_price", "0"))
+                                product_image_link = validate_url(row.get("product_image_url", ""))
+                                product_merchant_link = validate_url(row.get("product_merchant_url", ""))
+                                
+                                product, created = YouTubeProduct.objects.update_or_create(
+                                    video=video_obj,
+                                    product_name=product_name,
+                                    defaults={
+                                        "product_price": price,
+                                        "product_image_link": product_image_link,
+                                        "product_merchant": row.get("product_merchant", ""),
+                                        "product_merchant_link": product_merchant_link
+                                    }
+                                )
+                                saved_count += 1
+                                if created:
+                                    logger.info(f"✨ 새로운 제품 정보 저장: {product_name} (가격: {price:,}원)")
+                                else:
+                                    logger.info(f"🔄 기존 제품 정보 업데이트: {product_name} (가격: {price:,}원)")
+                            except Exception as e:
+                                logger.error(f"❌ 제품 정보 저장 중 에러 발생 ({product_name}): {e}")
+                                continue
+                except Exception as e:
+                    logger.error(f"❌ 영상 정보 처리 중 에러 발생 ({video_id}): {e}")
+                    continue
 
     except Exception as e:
         logger.error(f"❌ DB 저장 중 에러 발생: {e}", exc_info=True)
