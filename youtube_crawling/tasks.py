@@ -17,18 +17,12 @@ def crawl_channels_task():
     for url in channel_urls:
         try:
             logger.info(f"🚀 채널 시작: {url}")
-
-            # 채널 이름 추출 및 디코딩
-            raw_channel_name = urllib.parse.unquote(url.split("/")[-1])
-            format_channel_name = "".join(
-                c for c in raw_channel_name.replace(" ", "_") if c.isalnum() or c in ('_',)
-            ).rstrip()
             
             # 크롤링 시작 전 충분한 대기 시간 확보
             logger.info("⏳ 페이지 로딩 대기 중...")
             time.sleep(5)  # 5초로 증가
             
-            crawl_channel_videos(url, export_dir, format_channel_name)
+            crawl_channel_videos(url, export_dir)
             
             logger.info(f"✅ 채널 완료: {url}")
             
