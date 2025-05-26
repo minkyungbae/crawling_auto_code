@@ -57,7 +57,7 @@ class ChannelCrawlTriggerView(APIView):
         for url in channel_urls:
             channel_name = url.split("@")[-1]
             save_dir = "./crawling_result_csv"
-            crawl_channel_videos.delay(url, save_dir, channel_name)
+            crawl_channel_videos.delay(url, save_dir)
 
         return Response({"message": f"{len(channel_urls)}개의 크롤링이 시작되었습니다."}, status=202)
     
