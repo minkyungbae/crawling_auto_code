@@ -602,13 +602,12 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         if products is None:
             products = []
             
-        # 제품 정보가 없는 경우에만 추출된 제품 개수로 대체
-        if not products:
-            logger.info(f"✅ 영상 정보 및 제품 {product_count}개 수집 완료")
-        else:
-            # 실제 추출된 제품이 있다면 그 개수를 사용
+        # HTML에서 추출한 제품 개수가 0이고, 실제 제품이 있는 경우에만 실제 개수 사용
+        if product_count == 0 and products:
             product_count = len(products)
-            logger.info(f"✅ 영상 정보 및 제품 {product_count}개 수집 완료")
+            logger.info(f"✅ 실제 추출된 제품 개수 사용: {product_count}개")
+        
+        logger.info(f"✅ 최종 제품 개수: {product_count}개")
 
         # 기본 데이터 세트
         base_data = []
@@ -626,7 +625,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                     "extracted_date": today_str,
                     "video_url": video_url,
                     "description": description,
-                    "product_count": product_count,
+                    "product_count": product_count,  # HTML에서 추출한 제품 개수 사용
                     "product_name": product.get("title", ""),
                     "product_price": product.get("price", ""),
                     "product_image_url": product.get("imageUrl", ""),
@@ -654,7 +653,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 "product_merchant": ""
             })
 
-        logger.info(f"📦 수집된 제품 개수: {len(base_data)}")
+        logger.info(f"📦 수집된 데이터 행 개수: {len(base_data)}")
         return pd.DataFrame(base_data)
     
     except Exception as e:
@@ -789,7 +788,10 @@ def save_to_db(data: pd.DataFrame):
                     # 숫자 데이터 변환
                     subscriber_count = parse_subscriber_count(first_row.get("subscribers", "0"))
                     view_count = parse_view_count(first_row.get("view_count", "0"))
+                    
+                    # HTML에서 추출한 제품 개수 사용 (첫 번째 행에서만 가져옴)
                     product_count = int(first_row.get("product_count", 0))
+                    logger.info(f"✅ 비디오 {video_id}의 제품 개수: {product_count}개")
                     
                     # URL 검증
                     video_url = validate_url(first_row.get("video_url", ""))
@@ -805,7 +807,7 @@ def save_to_db(data: pd.DataFrame):
                             "title": first_row.get("title", ""),
                             "view_count": view_count,
                             "video_url": video_url,
-                            "product_count": product_count,
+                            "product_count": product_count,  # HTML에서 추출한 제품 개수 사용
                             "description": clean_description(first_row.get("description", "")),
                         }
                     )
@@ -854,7 +856,7 @@ def save_to_db(data: pd.DataFrame):
         logger.error(f"❌ DB 저장 중 에러 발생: {e}", exc_info=True)
         return 0
 
-    logger.info(f"✅ 총 {updated_count}개의 영상이 업데이트되었고, {saved_count}개의 새로운 제품이 저장되었습니다.")
+    logger.info(f"✅ 총 {updated_count}개의 영상이 업데이트되었고, {saved_count}개의 제품이 저장되었습니다.")
     return saved_count
 
 # ------------------------------------- ⬇️ CSV용으로 데이터 전처리하는 함수 ------------------------------
@@ -939,16 +941,18 @@ def crawl_channel_videos(channel_url: str, save_path: str):
                 logger.error(f"❌ ({i}/{total}) 영상 크롤링 중 에러 발생: {video_id}, 에러: {e}", exc_info=True)
 
         if not all_data.empty:
-            # 디렉토리와 채널명 추출
-            directory = os.path.dirname(save_path)
-            channel_name = get_channel_name(driver, channel_url)
-            
-            # CSV 저장
-            csv_path = save_to_csv(all_data, directory, channel_name)
-            if csv_path:
-                logger.info(f"✅ CSV 파일 저장 완료: {csv_path}")
-            else:
-                logger.error("❌ CSV 파일 저장 실패")
+            try:
+                # 채널명 가져오기
+                channel_name = get_channel_name(driver, channel_url)
+                
+                # CSV 저장
+                csv_path = save_to_csv(all_data, save_path, channel_name)
+                if csv_path:
+                    logger.info(f"✅ CSV 파일 저장 완료: {csv_path}")
+                else:
+                    logger.error("❌ CSV 파일 저장 실패")
+            except Exception as e:
+                logger.error(f"❌ CSV 저장 중 에러 발생: {e}", exc_info=True)
         else:
             logger.warning("⚠️ 크롤링 결과 데이터 없음")
 
@@ -956,13 +960,15 @@ def crawl_channel_videos(channel_url: str, save_path: str):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
+    # CSV 저장 디렉토리 설정 및 생성
+    export_dir = os.path.join(os.getcwd(), "crawling_result_csv")
+    if not os.path.exists(export_dir):
+        os.makedirs(export_dir)
+        logger.info(f"📁 CSV 저장 디렉토리 생성: {export_dir}")
+
     channel_urls = [
         "https://www.youtube.com/@%EC%B9%A1%EC%B4%89",
     ]
-    
-    export_dir = "./crawling_result_csv/"
-    if not os.path.exists(export_dir):
-        os.makedirs(export_dir)
 
     for channel_url in channel_urls:
         try:
