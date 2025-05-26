@@ -749,7 +749,20 @@ def get_channel_name(driver, channel_url):
         logger.warning(f"⚠️ 채널명 추출 실패: {e}")
         return "unknown_channel"
 
-
+# ------------------------------------- ⬇️ URL 유효성 검사 및 정리 ------------------------------
+def validate_url(url: str) -> str:
+    try:
+        if not url:
+            return ""
+        # URL 스키마가 없는 경우 추가
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        # URL 인코딩
+        return urllib.parse.quote(url, safe=':/?=&')
+    except Exception as e:
+        logger.error(f"❌ URL 검증 실패: {url}, 에러: {e}")
+        return ""
+    
 # ------------------------------------- ⬇️ DB에 저장하는 함수 ------------------------------
 def save_to_db(data: pd.DataFrame):
     if data is None or data.empty:
