@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import List, Union, Dict, Optional
 from urllib.parse import urlparse, unquote, parse_qsl
 from slugify import slugify
+from django.db import transaction
 import pandas as pd
 import logging, time, re, json, os, urllib.parse
 
@@ -638,11 +639,8 @@ def get_channel_id_from_url(channel_url):
     parts = parsed.path.strip("/").split("/")
     return parts[-1] if parts else "unknown_channel"
 
-# ------------------------------------- ⬇️ 채널 URL에서 고유한 ID 추출 (예: UCxxxx 또는 @handle 형식) ------------------------------
+# ------------------------------------- ⬇️ 채널 이름을 YouTube 채널 페이지에서 가져옴 ------------------------------
 def get_channel_name(driver, channel_url):
-    """
-    채널 이름을 YouTube 채널 페이지에서 가져옴.
-    """
     driver.get(channel_url)
     driver.implicitly_wait(5)
     try:
@@ -652,20 +650,6 @@ def get_channel_name(driver, channel_url):
     except Exception as e:
         logger.warning(f"⚠️ 채널명 추출 실패: {e}")
         return "unknown_channel"
-    
-# ------------------------------------- ⬇️ 엑셀로 저장하는 함수 ------------------------------
-def save_to_excel(df: pd.DataFrame, file_path: str):
-    try:
-        today_str = datetime.now().strftime("%Y%m%d")
-        if file_path.lower().endswith(".xlsx"):
-            file_path = file_path[:-5] + f"_{today_str}.xlsx"
-        else:
-            file_path = file_path + f"_{today_str}.xlsx"
-
-        df.to_excel(file_path, index=False)
-        logger.info(f"💾 엑셀 저장 완료: {file_path}")
-    except Exception as e:
-        logger.error(f"❌ 엑셀 저장 실패: {e}", exc_info=True)
 
 
 # ------------------------------------- ⬇️ DB에 저장하는 함수 ------------------------------
@@ -675,7 +659,6 @@ def save_to_db(data: pd.DataFrame):
         logger.warning("⚠️ 저장할 데이터가 없습니다.")
         return 0
 
-    from django.db import transaction
     saved_count = 0
     updated_count = 0
     
@@ -758,6 +741,63 @@ def save_to_db(data: pd.DataFrame):
     logger.info(f"✅ 총 {updated_count}개의 영상이 업데이트되었고, {saved_count}개의 새로운 제품이 저장되었습니다.")
     return saved_count
 
+# ------------------------------------- ⬇️ CSV용으로 데이터 전처리하는 함수 ------------------------------
+def preprocess_df(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df['view_count'] = df['view_count'].apply(parse_view_count)
+    df['subscribers'] = df['subscribers'].apply(parse_subscriber_count)
+    df['product_price'] = df['product_price'].apply(parse_price)
+    df['description'] = df['description'].apply(clean_description)
+    df['upload_date'] = df['upload_date'].apply(format_date)
+    df['extracted_date'] = df['extracted_date'].apply(format_date)
+    return df
+
+# ------------------------------------- ⬇️ CSV로 저장하는 함수 ------------------------------
+def save_to_csv(df: pd.DataFrame, directory: str, channel_name: str) -> str:
+    df = preprocess_df(df)
+    try:
+        today_str = datetime.now().strftime("%Y%m%d")
+        
+        # 디렉토리가 없으면 생성
+        os.makedirs(directory, exist_ok=True)
+
+        # 채널명에서 특수문자 제거하고 공백을 언더스코어로 변경
+        safe_channel_name = "".join(c for c in channel_name.replace(" ", "_") if c.isalnum() or c in ('_',)).rstrip()
+
+        # 해당 날짜와 채널 이름의 기존 파일 확인
+        pattern = f"[0-9]{{2}}_{safe_channel_name}_{today_str}.csv"
+        existing_files = [
+            f for f in os.listdir(directory)
+            if re.match(pattern, f)
+        ]
+
+        # 다음 번호 결정
+        if not existing_files:
+            next_number = 1
+        else:
+            numbers = []
+            for f in existing_files:
+                try:
+                    num = int(f.split('_')[0])
+                    numbers.append(num)
+                except (ValueError, IndexError):
+                    continue
+            next_number = max(numbers, default=0) + 1
+
+        # 파일명 생성
+        file_name = f"{next_number:02d}_{safe_channel_name}_{today_str}.csv"
+        file_path = os.path.join(directory, file_name)
+
+        # CSV 저장
+        df.to_csv(file_path, index=False, encoding='utf-8-sig')
+        logger.info(f"💾 CSV 저장 완료: {file_path}")
+        return file_path
+        
+    except Exception as e:
+        logger.error(f"❌ CSV 저장 실패: {e}", exc_info=True)
+        return None
+
+
 # ------------------------------------- ⬇️ 유튜브 채널의 전체 크롤링을 실행하는 함수 ------------------------------
 def crawl_channel_videos(channel_url: str, save_path: str):
     with create_driver() as driver:
@@ -776,40 +816,42 @@ def crawl_channel_videos(channel_url: str, save_path: str):
                 logger.info(f"\n🔍 ({i}/{total}) 영상 크롤링 시작: {video_id}")
                 df = collect_video_data(driver, video_id)
                 if df is not None and not df.empty:
+                    all_data = pd.concat([all_data, df], ignore_index=True)
                     save_to_db(df)
                     logger.info(f"✅ ({i}/{total}) 영상 크롤링 완료: {video_id}")
             except Exception as e:
                 logger.error(f"❌ ({i}/{total}) 영상 크롤링 중 에러 발생: {video_id}, 에러: {e}", exc_info=True)
 
         if not all_data.empty:
-            save_to_db(all_data)
-            save_to_excel(all_data, save_path)
+            # 디렉토리와 채널명 추출
+            directory = os.path.dirname(save_path)
+            channel_name = get_channel_name(driver, channel_url)
+            
+            # CSV 저장
+            csv_path = save_to_csv(all_data, directory, channel_name)
+            if csv_path:
+                logger.info(f"✅ CSV 파일 저장 완료: {csv_path}")
+            else:
+                logger.error("❌ CSV 파일 저장 실패")
         else:
             logger.warning("⚠️ 크롤링 결과 데이터 없음")
 
-
-# 메인 실행부
+# ------------------------------------- ⬇️ 크롤링 메인 실행부 ------------------------------
 if __name__ == "__main__":
-
     logging.basicConfig(level=logging.INFO)
 
     channel_urls = [
         "https://www.youtube.com/@%EC%B9%A1%EC%B4%89",
     ]
     
-    export_dir = "exports"
+    export_dir = "./crawling_result_csv/"
     if not os.path.exists(export_dir):
         os.makedirs(export_dir)
 
     for channel_url in channel_urls:
         try:
             logger.info(f"🚀 채널 크롤링 시작: {channel_url}")
-
-            today_str = datetime.datetime.now().strftime("%Y%m%d")
-            channel_name = urllib.parse.unquote(channel_url.split("/")[-1])
-            save_path = os.path.join(export_dir,f"{channel_name}_{today_str}.xlsx")
-
-            crawl_channel_videos(channel_url, save_path)
+            crawl_channel_videos(channel_url, export_dir)
             logger.info(f"✅ 채널 크롤링 완료: {channel_url}")
 
         except Exception as e:
