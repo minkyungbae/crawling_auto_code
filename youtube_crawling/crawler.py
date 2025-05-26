@@ -492,6 +492,18 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                 continue
         
         soup = BeautifulSoup(driver.page_source, "html.parser")
+        soup_file_path = "/Users/mac/Desktop/minmin/intern/crawling_auto_code/soup_files"
+        
+        # soup_files 디렉토리가 없으면 생성
+        if not os.path.exists(soup_file_path):
+            os.makedirs(soup_file_path)
+            
+        # 현재 날짜를 YYYYMMDD 형식으로 가져오기
+        today_str = datetime.now().strftime("%y%m%d")
+        
+        # 오늘 날짜의 파일들을 찾아서 가장 큰 번호 찾기
+        existing_files = [f for f in os.listdir(soup_file_path) if f.endswith(f"_{today_str}.txt")]
+        current_number = 1
 
         # 메타데이터 추출
         video_id = video_url.split("v=")[-1]
