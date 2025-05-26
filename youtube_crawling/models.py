@@ -20,9 +20,9 @@ class YouTubeProduct(models.Model):
     video = models.ForeignKey(YouTubeVideo, on_delete=models.CASCADE, related_name='products')
     product_name = models.CharField(max_length=500, blank=True)
     product_price = models.CharField(max_length=100, blank=True)
-    product_image_link = models.URLField(max_length=1000, blank=True)
+    product_image_link = models.TextField(blank=True)
     product_merchant = models.CharField(max_length=100, blank=True)
-    product_merchant_link = models.URLField(max_length=1000, blank=True)
+    product_merchant_link = models.TextField(blank=True)
 
     class Meta:
         unique_together = ('video', 'product_name')
