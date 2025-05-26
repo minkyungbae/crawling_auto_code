@@ -275,8 +275,22 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
         except Exception as e:
             logger.info(f"더보기 버튼 클릭 실패 (이미 펼쳐져 있을 수 있음): {e}")
 
-        # 제품 아이템 찾기
-        product_items = soup.select("#items > ytd-merch-shelf-item-renderer")
+        # 제품 아이템 찾기 - 여러 셀렉터 시도
+        product_selectors = [
+            "#items > ytd-merch-shelf-item-renderer",
+            "ytd-merch-shelf-renderer #items ytd-merch-shelf-item-renderer",
+            "#merch-shelf #items ytd-merch-shelf-item-renderer",
+            "ytd-merch-shelf-renderer ytd-merch-shelf-item-renderer",
+            "#product-items ytd-merch-shelf-item-renderer"
+        ]
+        
+        product_items = []
+        for selector in product_selectors:
+            product_items = soup.select(selector)
+            if product_items:
+                logger.info(f"✅ 제품 아이템 찾음: {selector}")
+                break
+                
         total_items = len(product_items)
         logger.info(f"총 {total_items}개의 제품 아이템을 찾았습니다.")
 
@@ -285,50 +299,102 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
             try:
                 product_info = {}
 
-                '''250526 제품명 추출'''
-                title_elem = item.select_one(".product-item-title")
-                if title_elem and (title_text := title_elem.get_text(strip=True)):
-                    product_info["title"] = title_text
-                    logger.info(f"✅ 제품명 추출 성공: {title_text}")
-                else:
+                # 제품명 추출 - 여러 셀렉터 시도
+                title_selectors = [
+                    ".product-item-title",
+                    ".title",
+                    "h3",
+                    "yt-formatted-string.title"
+                ]
+                
+                title_text = None
+                for selector in title_selectors:
+                    title_elem = item.select_one(selector)
+                    if title_elem and (title_text := title_elem.get_text(strip=True)):
+                        product_info["title"] = title_text
+                        logger.info(f"✅ 제품명 추출 성공: {title_text}")
+                        break
+                
+                if not title_text:
                     logger.warning("⚠️ 제품명을 찾을 수 없어 다음 아이템으로 넘어갑니다")
                     continue
 
-                '''250526 제품 링크 추출'''
-                link_elem = item.select_one(".product-item-description")
-                if link_elem and (product_merchant_url := link_elem.get_text(strip=True)):
-                    product_info["url"] = product_merchant_url
-                    logger.info(f"✅ 제품 링크 추출 성공: {product_merchant_url}")
+                # 제품 링크 추출 - 여러 셀렉터 시도
+                link_selectors = [
+                    ".product-item-description",
+                    "a.yt-simple-endpoint",
+                    "a[href]"
+                ]
+                
+                product_url = None
+                for selector in link_selectors:
+                    link_elem = item.select_one(selector)
+                    if link_elem:
+                        if 'href' in link_elem.attrs:
+                            product_url = link_elem['href']
+                        else:
+                            product_url = link_elem.get_text(strip=True)
+                        if product_url:
+                            product_info["url"] = product_url
+                            logger.info(f"✅ 제품 링크 추출 성공: {product_url}")
+                            break
 
-                '''250526 가격 추출'''
-                price_elem = item.select_one(".product-item-price")
-                if price_elem and (price_text := price_elem.get_text(strip=True)):
-                    product_info["price"] = price_text
-                    logger.info(f"✅ 제품 가격 추출 성공: {price_text}")
-                else:
+                # 가격 추출 - 여러 셀렉터 시도
+                price_selectors = [
+                    ".product-item-price",
+                    ".price",
+                    "span.price",
+                    "yt-formatted-string.price"
+                ]
+                
+                price_text = None
+                for selector in price_selectors:
+                    price_elem = item.select_one(selector)
+                    if price_elem and (price_text := price_elem.get_text(strip=True)):
+                        product_info["price"] = price_text
+                        logger.info(f"✅ 제품 가격 추출 성공: {price_text}")
+                        break
+                
+                if not price_text:
                     logger.warning("⚠️ 가격 정보를 찾을 수 없어 다음 아이템으로 넘어갑니다")
                     continue
 
-                '''250526 이미지 URL 추출'''
-                product_image = item.find(attrs={'class':'product-item-image style-scope ytd-merch-shelf-item-renderer no-transition'})
-                if product_image:
-                    img_elem = product_image.find(attrs={'class':'style-scope yt-img-shadow'})
-                    if img_elem and (img_url := img_elem.get('src')):
+                # 이미지 URL 추출 - 여러 셀렉터 시도
+                img_selectors = [
+                    "img.style-scope.yt-img-shadow",
+                    "img[src]",
+                    ".product-item-image img"
+                ]
+                
+                img_url = None
+                for selector in img_selectors:
+                    img_elem = item.select_one(selector)
+                    if img_elem and 'src' in img_elem.attrs:
+                        img_url = img_elem['src']
                         product_info["imageUrl"] = img_url
                         logger.info(f"✅ 제품 이미지 URL 추출 성공: {img_url}")
-                    else:
-                        product_info["imageUrl"] = ""
-                        logger.warning("⚠️ 이미지 URL을 찾을 수 없습니다")
-                else:
+                        break
+                
+                if not img_url:
+                    logger.warning("⚠️ 이미지 URL을 찾을 수 없습니다")
                     product_info["imageUrl"] = ""
-                    logger.warning("⚠️ 제품 이미지 요소를 찾을 수 없습니다")
 
-                '''250526 판매처 추출'''
-                merchant_elem = item.select_one(".product-item-merchant-text")
-                if merchant_elem and (merchant_text := merchant_elem.get_text(strip=True)):
-                    merchant_name = merchant_text.replace("!", "").strip()
-                    product_info["merchant"] = merchant_name
-                    logger.info(f"✅ 판매처 추출 성공: {merchant_name}")
+                # 판매처 추출 - 여러 셀렉터 시도
+                merchant_selectors = [
+                    ".product-item-merchant-text",
+                    ".merchant",
+                    "span.merchant",
+                    "yt-formatted-string.merchant"
+                ]
+                
+                merchant_text = None
+                for selector in merchant_selectors:
+                    merchant_elem = item.select_one(selector)
+                    if merchant_elem and (merchant_text := merchant_elem.get_text(strip=True)):
+                        merchant_name = merchant_text.replace("!", "").strip()
+                        product_info["merchant"] = merchant_name
+                        logger.info(f"✅ 판매처 추출 성공: {merchant_name}")
+                        break
 
                 # 제품명과 가격이 있는 경우만 저장
                 if "title" in product_info and "price" in product_info:
@@ -503,22 +569,38 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
         description = description or "설명 없음"
         logger.info(f"설명 길이: {len(description)} 글자")
 
-        '''250522 제품 추출'''
+        '''250522 제품 개수'''
+        # HTML에서 제품 개수 직접 추출 시도
+        try:
+            product_count_elem = soup.select_one("yt-formatted-string#info")
+            if product_count_elem:
+                text_content = product_count_elem.get_text()
+                # "n개 제품" 패턴 찾기
+                if match := re.search(r'(\d+)개\s*제품', text_content):
+                    product_count = int(match.group(1))
+                    logger.info(f"✅ HTML에서 제품 개수 추출 성공: {product_count}개")
+                else:
+                    product_count = 0
+                    logger.warning("⚠️ HTML에서 제품 개수를 찾을 수 없음")
+            else:
+                product_count = 0
+                logger.warning("⚠️ 제품 개수 요소를 찾을 수 없음")
+        except Exception as e:
+            logger.error(f"❌ HTML에서 제품 개수 추출 실패: {e}")
+            product_count = 0
+
+        # 제품 정보 추출
         products = extract_products_from_dom(driver, soup)
-        if products is None:  # None 체크 추가
+        if products is None:
             products = []
             
-        # 제품 개수 추출
-        try:
-            product_count_elem = soup.select_one("#product-count")
-            product_count = parse_product_count(product_count_elem.text if product_count_elem else "")
-            if product_count is None:  # parse_product_count가 None을 반환한 경우
-                product_count = 0
-        except Exception as e:
-            logger.warning(f"⚠️ 제품 개수 추출 실패: {e}")
-            product_count = 0
-            
-        logger.info(f"✅ 영상 정보 및 제품 개수({product_count}개) 수집 완료")
+        # 제품 정보가 없는 경우에만 추출된 제품 개수로 대체
+        if not products:
+            logger.info(f"✅ 영상 정보 및 제품 {product_count}개 수집 완료")
+        else:
+            # 실제 추출된 제품이 있다면 그 개수를 사용
+            product_count = len(products)
+            logger.info(f"✅ 영상 정보 및 제품 {product_count}개 수집 완료")
 
         # 기본 데이터 세트
         base_data = []
