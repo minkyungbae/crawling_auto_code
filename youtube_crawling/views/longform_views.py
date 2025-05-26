@@ -55,7 +55,9 @@ class ChannelCrawlTriggerView(APIView):
             return Response({"error": f"유효하지 않은 URL이 있습니다: {invalid_urls}"}, status=400)
 
         for url in channel_urls:
-            crawl_channel_videos.delay(url)
+            channel_name = url.split("@")[-1]
+            save_dir = "./crawling_result_csv"
+            crawl_channel_videos.delay(url, save_dir, channel_name)
 
         return Response({"message": f"{len(channel_urls)}개의 크롤링이 시작되었습니다."}, status=202)
     
