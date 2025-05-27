@@ -743,7 +743,9 @@ def get_channel_name(driver, channel_url):
     try:
         title_element = driver.find_element("xpath", '//meta[@property="og:title"]')
         channel_name = title_element.get_attribute("content")
-        return slugify(channel_name)  # 파일명에 사용할 수 있도록 slugify 처리
+        # URL 디코딩된 채널명 반환
+        decoded_name = urllib.parse.unquote(channel_name)
+        return decoded_name  # slugify 제거하여 한글 유지
     except Exception as e:
         logger.warning(f"⚠️ 채널명 추출 실패: {e}")
         return "unknown_channel"
@@ -879,8 +881,11 @@ def save_to_csv(df: pd.DataFrame, directory: str, channel_name: str) -> str:
         # 디렉토리가 없으면 생성
         os.makedirs(directory, exist_ok=True)
 
+        # URL 인코딩된 채널명을 디코딩
+        decoded_channel_name = urllib.parse.unquote(channel_name)
+        
         # 채널명에서 특수문자 제거하고 공백을 언더스코어로 변경
-        safe_channel_name = "".join(c for c in channel_name.replace(" ", "_") if c.isalnum() or c in ('_',)).rstrip()
+        safe_channel_name = "".join(c for c in decoded_channel_name.replace(" ", "_") if c.isalnum() or c in ('_',)).rstrip()
 
         # 해당 날짜와 채널 이름의 기존 파일 확인
         pattern = f"[0-9]{{2}}_{safe_channel_name}_{today_str}.csv"
