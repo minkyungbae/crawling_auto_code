@@ -436,23 +436,19 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
 
                 # ---------- 이미지 URL 추출 ----------
                 try:
-                    # 모든 이미지 URL 수집
-                    all_img_urls = []
+                    img_url = ""
                     for retry in range(retry_count):
-                        for img in soup.find_all('img'):
-                            src = img.get('src', '')
-                            if 'shopping?' in src:
-                                all_img_urls.append(src)
-                        if all_img_urls:
+                        img_tag = item.find('img')
+                        if img_tag and img_tag.get('src'):
+                            img_url = img_tag['src']
                             break
                         time.sleep(0.5)
-                    if all_img_urls:
-                        product_info["imageUrl"] = all_img_urls[0]
-                        logger.info(f"✅ 쇼핑 이미지 URL 추출 성공: {all_img_urls[0]}")
+                    if img_url:
+                        product_info["imageUrl"] = img_url
+                        logger.info(f"✅ 쇼핑 이미지 URL 추출 성공: {img_url}")
                     else:
-                        logger.warning("⚠️ shopping?을 포함한 이미지 URL을 찾을 수 없습니다")
+                        logger.warning("⚠️ 이미지를 찾을 수 없습니다")
                         product_info["imageUrl"] = ""
-                        
                 except Exception as e:
                     logger.error(f"❌ 이미지 URL 추출 중 에러 발생: {str(e)}")
                     product_info["imageUrl"] = ""
@@ -523,6 +519,7 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
                     time.sleep(1)
             if expand_clicked:
                 break
+
         # 제품 섹션 (셀렉터 2개, 각 3회 재시도)
         product_selectors = [
             "ytd-merch-shelf-renderer",
@@ -542,19 +539,14 @@ def base_youtube_info(driver, video_url: str) -> pd.DataFrame:
             if product_section_found:
                 break
         soup = BeautifulSoup(driver.page_source, "html.parser")
-        soup_file_path = "/Users/mac/Desktop/minmin/intern/crawling_auto_code/soup_files"
-        
-        if not os.path.exists(soup_file_path):
-            os.makedirs(soup_file_path)
-        today_str = datetime.now().strftime("%Y%m%d")
 
         # 메타데이터 추출
         video_id = video_url.split("v=")[-1]
 
         # ---------- 제목 추출 ----------
         title_selectors = [
-            "h1.title yt-formatted-string",
-            "h1.title"
+            "#title yt-formatted-string",
+            "yt-formatted-string[class*='ytd-watch-metadata']"
         ]
         title = None
         for selector in title_selectors:
