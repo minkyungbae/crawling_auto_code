@@ -435,22 +435,24 @@ def extract_products_from_dom(driver, soup: BeautifulSoup) -> list[dict]:
                     continue
 
                 # ---------- 이미지 URL 추출 ----------
+                img_url = ""
                 try:
-                    img_url = ""
-                    for retry in range(retry_count):
-                        img_tag = item.find('img')
-                        if img_tag and img_tag.get('src'):
-                            img_url = img_tag['src']
-                            break
-                        time.sleep(0.5)
-                    if img_url:
-                        product_info["imageUrl"] = img_url
-                        logger.info(f"✅ 쇼핑 이미지 URL 추출 성공: {img_url}")
-                    else:
-                        logger.warning("⚠️ 이미지를 찾을 수 없습니다")
-                        product_info["imageUrl"] = ""
+                    selenium_items = driver.find_elements(By.CSS_SELECTOR, "ytd-merch-shelf-item-renderer")
+                    idx = product_items.index(item)
+                    selenium_item = selenium_items[idx]
+                    # shadow DOM 접근
+                    shadow_host = selenium_item.find_element(By.CSS_SELECTOR, "yt-img-shadow")
+                    img = driver.execute_script("return arguments[0].shadowRoot.querySelector('img#img')", shadow_host)
+                    if img:
+                        img_url = img.get_attribute("src")
                 except Exception as e:
-                    logger.error(f"❌ 이미지 URL 추출 중 에러 발생: {str(e)}")
+                    logger.warning(f"⚠️ shadow DOM 이미지 추출 실패: {e}")
+
+                if img_url:
+                    product_info["imageUrl"] = img_url
+                    logger.info(f"✅ 쇼핑 이미지 URL 추출 성공: {img_url}")
+                else:
+                    logger.warning("⚠️ 이미지를 찾을 수 없습니다")
                     product_info["imageUrl"] = ""
 
                 # ---------- 판매처 추출 ----------
